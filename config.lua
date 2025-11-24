@@ -1439,8 +1439,8 @@ function NephUI:SetupOptions()
                                 desc = "Adjust the overall UI scale",
                                 order = 1,
                                 width = "normal",
-                                min = 0.1,
-                                max = 2.0,
+                                min = 0.35,
+                                max = 1.0,
                                 step = 0.01,
                                 get = function()
                                     local scale = self.db.profile.general.uiScale
@@ -3778,18 +3778,62 @@ function NephUI:SetupOptions()
         end,
     }
 
+    options.args.enableUnitFrameAnchors = {
+        type = "execute",
+        name = "Enable Unit Frame Anchors",
+        desc = "Show draggable anchors for unit frames (works independently of Edit Mode)",
+        order = 102,
+        func = function()
+            local db = NephUI.db.profile.unitFrames
+            if not db then
+                db = {}
+                NephUI.db.profile.unitFrames = db
+            end
+            if not db.General then db.General = {} end
+            db.General.ShowEditModeAnchors = true
+            if NephUI.UnitFrames then
+                NephUI.UnitFrames:UpdateEditModeAnchors()
+                print("|cff00ff00[NephUI] Unit frame anchors enabled|r")
+            else
+                print("|cffff0000[NephUI] Unit frames not initialized|r")
+            end
+        end,
+    }
+
+    options.args.disableUnitFrameAnchors = {
+        type = "execute",
+        name = "Disable Unit Frame Anchors",
+        desc = "Hide draggable anchors for unit frames",
+        order = 103,
+        func = function()
+            local db = NephUI.db.profile.unitFrames
+            if not db then
+                db = {}
+                NephUI.db.profile.unitFrames = db
+            end
+            if not db.General then db.General = {} end
+            db.General.ShowEditModeAnchors = false
+            if NephUI.UnitFrames then
+                NephUI.UnitFrames:UpdateEditModeAnchors()
+                print("|cff00ff00[NephUI] Unit frame anchors disabled|r")
+            else
+                print("|cffff0000[NephUI] Unit frames not initialized|r")
+            end
+        end,
+    }
+
     -- Version display and Discord link button
     options.args.versionSpacer = {
         type = "description",
         name = " ",
-        order = 102,
+        order = 104,
     }
     
     options.args.discordButton = {
         type = "input",
         name = "Discord Support",
         desc = "Discord link - Select and copy (Ctrl+A) -> (Ctrl+C)",
-        order = 103,
+        order = 105,
         get = function()
             return "https://discord.gg/Mc2StWHKya"
         end,
@@ -3803,7 +3847,7 @@ function NephUI:SetupOptions()
         type = "description",
         name = "\n|cff00ff00Version: " .. version .. "|r",
         fontSize = "medium",
-        order = 104,
+        order = 106,
     }
 
     AceConfig:RegisterOptionsTable(ADDON_NAME, options)
@@ -3811,6 +3855,9 @@ function NephUI:SetupOptions()
     
     -- Set default window size (width, height)
     AceConfigDialog:SetDefaultSize(ADDON_NAME, 900, 700)
+    
+    -- Setup UI scale protection for config panel
+    NephUI:SetupConfigPanelScaleProtection()
     
     -- Store reference to trackedItemsGroup for dynamic updates
     -- Note: trackedItemsGroup is inside the "Items" tab (general), not directly under customIcons
@@ -3825,6 +3872,65 @@ function NephUI:SetupOptions()
     C_Timer.After(0.5, function()
         NephUI:SetupCustomIconsDragDrop()
     end)
+end
+
+-- Setup UI scale protection for config panel so it never changes size with UI scale
+function NephUI:SetupConfigPanelScaleProtection()
+    -- Hook UIParent:SetScale to update config panel scale whenever UI scale changes
+    if not NephUI._UIParentSetScaleHooked then
+        local originalSetScale = UIParent.SetScale
+        UIParent.SetScale = function(self, scale)
+            originalSetScale(self, scale)
+            -- Update config panel scale if it's open
+            NephUI:UpdateConfigPanelScaleProtection()
+        end
+        NephUI._UIParentSetScaleHooked = true
+    end
+end
+
+-- Apply scale protection to a config panel frame
+function NephUI:ApplyConfigPanelScaleProtection(frame)
+    if not frame then return end
+    
+    local uiScale = UIParent:GetScale()
+    if uiScale and uiScale > 0 then
+        -- Set the frame's scale to the inverse of UIParent's scale, then scale to 70% size
+        -- This makes the effective scale = uiScale * (0.7/uiScale) = 0.7
+        local inverseScale = 0.6 / uiScale
+        frame:SetScale(inverseScale)
+    end
+end
+
+-- Update scale protection for all open config panels
+function NephUI:UpdateConfigPanelScaleProtection()
+    local AceConfigDialog = LibStub("AceConfigDialog-3.0", true)
+    if not AceConfigDialog then return end
+    
+    local openFrame = AceConfigDialog.OpenFrames and AceConfigDialog.OpenFrames[ADDON_NAME]
+    if openFrame and openFrame.frame then
+        NephUI:ApplyConfigPanelScaleProtection(openFrame.frame)
+    end
+    
+    -- Also update the global reference if it exists
+    local configFrame = _G["NephUI_ConfigFrame"]
+    if configFrame then
+        NephUI:ApplyConfigPanelScaleProtection(configFrame)
+    end
+end
+
+-- Disable unit frame anchors when config panel closes
+function NephUI:DisableUnitFrameAnchorsOnConfigClose()
+    local db = self.db.profile.unitFrames
+    if not db then return end
+    if not db.General then db.General = {} end
+    
+    -- Only disable if anchors are currently enabled
+    if db.General.ShowEditModeAnchors then
+        db.General.ShowEditModeAnchors = false
+        if self.UnitFrames then
+            self.UnitFrames:UpdateEditModeAnchors()
+        end
+    end
 end
 
 -- Setup drag-and-drop frame for custom icons tab
@@ -3962,7 +4068,7 @@ function NephUI:SetupCustomIconsDragDrop()
                         end
                     end)
                     
-                    -- Store frame references with names for easier debugging
+                    -- Store frame references with names for easier debugging and apply scale protection
                     C_Timer.After(0.1, function()
                         local openFrame = AceConfigDialog.OpenFrames[ADDON_NAME]
                         if openFrame and openFrame.frame then
@@ -3971,6 +4077,29 @@ function NephUI:SetupCustomIconsDragDrop()
                             if not _G["NephUI_ConfigFrame"] then
                                 _G["NephUI_ConfigFrame"] = frame
                             end
+                            
+                            -- Apply scale protection to keep config panel at constant size
+                            NephUI:ApplyConfigPanelScaleProtection(frame)
+                            
+                            -- Hook OnShow to reapply scale protection whenever the frame is shown
+                            local originalOnShow = frame:GetScript("OnShow")
+                            frame:SetScript("OnShow", function(self)
+                                if originalOnShow then
+                                    originalOnShow(self)
+                                end
+                                -- Reapply scale protection when shown to ensure it's always correct
+                                NephUI:ApplyConfigPanelScaleProtection(self)
+                            end)
+                            
+                            -- Hook OnHide to disable unit frame anchors when config panel closes
+                            local originalOnHide = frame:GetScript("OnHide")
+                            frame:SetScript("OnHide", function(self)
+                                if originalOnHide then
+                                    originalOnHide(self)
+                                end
+                                -- Disable unit frame anchors when config panel closes
+                                NephUI:DisableUnitFrameAnchorsOnConfigClose()
+                            end)
                             
                             -- Try to find and name child frames by storing references
                             local function StoreFrameReferences(parent, depth)

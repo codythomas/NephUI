@@ -16,7 +16,7 @@ local UnitToFrameName = {
     boss = "NephUI_Boss",
 }
 
-local DEFAULT_UNITFRAME_STRATA = "BACKGROUND"
+local DEFAULT_UNITFRAME_STRATA = "LOW"
 
 local function GetUnitFrameConfig(unit)
     local profile = NephUI.db and NephUI.db.profile and NephUI.db.profile.unitFrames
