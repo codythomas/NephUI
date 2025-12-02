@@ -2,7 +2,7 @@
 ## Title: NephUI
 ## Notes: Customize and enhance the Blizzard Cooldown Manager
 ## Author: Nephuhlim
-## Version: 1.19
+## Version: 1.22
 ## SavedVariables: NephUIDB
 ## OptionalDeps: Ace3, LibSharedMedia-3.0
 ## X-TaintLess-DisableMitigations: CUF_PROFILE_ACTIVATE_PATCH_VERSION=1
@@ -19,6 +19,7 @@ libs\LibDeflate\LibDeflate.lua
 libs\LibCustomGlow-1.0\LibCustomGlow-1.0.lua
 libs\TaintLess\TaintLess.xml
 libs\LibDualSpec-1.0\LibDualSpec-1.0.lua
+libs\LibButtonGlow-1.0\LibButtonGlow-1.0.lua
 
 # Ace3 libraries
 libs\AceAddon-3.0\AceAddon-3.0.xml
@@ -32,9 +33,80 @@ libs\AceGUI-3.0\AceGUI-3.0.xml
 libs\AceConfig-3.0\AceConfig-3.0.xml
 libs\AceSerializer-3.0\AceSerializer-3.0.xml
 
-# Addon code
-main.lua
-config.lua
-resourcebars.lua
-nudge.lua
-unitframes.lua
+# Core addon files
+Core\Main.lua
+Core\Defaults.lua
+Core\Media.lua
+Core\GUI.lua
+
+# Utility files
+Utils\Toolkit.lua
+Utils\PixelPerfect.lua
+Utils\Nudge.lua
+
+# Config files
+Config\ViewerOptions.lua
+Config\ResourceBarOptions.lua
+Config\CastBarOptions.lua
+Config\ChatOptions.lua
+Config\CustomIconOptions.lua
+Config\UnitFrameOptions.lua
+Config\ProfileOptions.lua
+Config\MinimapOptions.lua
+Config\ActionBarOptions.lua
+Config\BuffDebuffFramesOptions.lua
+Config.lua
+
+# Module files
+# IconViewers
+Modules\IconViewers\IconViewers.lua
+Modules\IconViewers\IconSkinning.lua
+Modules\IconViewers\ViewerLayout.lua
+Modules\IconViewers\ProcGlow.lua
+
+# CustomIcons
+Modules\CustomIcons\CustomIcons.lua
+Modules\CustomIcons\Trinkets.lua
+
+# CastBars
+Modules\CastBars\CastBars.lua
+Modules\CastBars\PlayerCastBar.lua
+Modules\CastBars\TargetCastBar.lua
+Modules\CastBars\FocusCastBar.lua
+Modules\CastBars\EmpoweredCasts.lua
+
+# ResourceBars
+Modules\ResourceBars\ResourceDetection.lua
+Modules\ResourceBars\PrimaryPowerBar.lua
+Modules\ResourceBars\FragmentedPower.lua
+Modules\ResourceBars\SecondaryPowerBar.lua
+Modules\ResourceBars\ResourceBars.lua
+
+# AbsorbBars
+Modules\AbsorbBars\AbsorbBars.lua
+
+# AutoUIScale
+Modules\AutoUIScale\AutoUIScale.lua
+
+# UnitFrames
+Modules\UnitFrames\UnitFrames.lua
+Modules\UnitFrames\Helpers.lua
+Modules\UnitFrames\Auras.lua
+Modules\UnitFrames\FrameCreation.lua
+Modules\UnitFrames\FrameUpdates.lua
+Modules\UnitFrames\PowerBars.lua
+Modules\UnitFrames\EditMode.lua
+Modules\UnitFrames\Anchors.lua
+
+# Chat
+Modules\Chat\Chat.lua
+
+# Minimap
+Modules\Minimap\Minimap.lua
+
+# ActionBars
+Modules\ActionBars\ActionBars.lua
+Modules\ActionBars\ActionBarGlow.lua
+
+# BuffDebuffFrames
+Modules\BuffDebuffFrames\BuffDebuffFrames.lua
