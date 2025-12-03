@@ -99,7 +99,9 @@ local function CreateCastBarOptions()
                         name = "Height",
                         order = 12,
                         width = "normal",
-                        min = 6, max = 40, step = 1,
+                        min = 6,
+                        max = 80,
+                        step = 1,
                         get = function() return NephUI.db.profile.castBar.height end,
                         set = function(_, val)
                             NephUI.db.profile.castBar.height = val
@@ -112,7 +114,9 @@ local function CreateCastBarOptions()
                         desc = "0 = automatic width based on icons",
                         order = 13,
                         width = "normal",
-                        min = 0, max = 1000, step = 1,
+                        min = 0,
+                        max = 1000,
+                        step = 1,
                         get = function() return NephUI.db.profile.castBar.width end,
                         set = function(_, val)
                             NephUI.db.profile.castBar.width = val
@@ -125,7 +129,9 @@ local function CreateCastBarOptions()
                         desc = "Distance from the icon viewer",
                         order = 14,
                         width = "full",
-                        min = -500, max = 500, step = 1,
+                        min = -500,
+                        max = 500,
+                        step = 1,
                         get = function() return NephUI.db.profile.castBar.offsetY end,
                         set = function(_, val)
                             NephUI.db.profile.castBar.offsetY = val
@@ -138,14 +144,16 @@ local function CreateCastBarOptions()
                         desc = "Horizontal distance from the anchor point",
                         order = 15,
                         width = "full",
-                        min = -500, max = 500, step = 1,
+                        min = -500,
+                        max = 500,
+                        step = 1,
                         get = function() return NephUI.db.profile.castBar.offsetX or 0 end,
                         set = function(_, val)
                             NephUI.db.profile.castBar.offsetX = val
                             NephUI:UpdateCastBarLayout()
                         end,
                     },
-                    
+
                     appearanceHeader = {
                         type = "header",
                         name = "Appearance",
@@ -164,7 +172,7 @@ local function CreateCastBarOptions()
                             end
                             return names
                         end,
-                        get = function() 
+                        get = function()
                             local override = NephUI.db.profile.castBar.texture
                             if override and override ~= "" then
                                 return override
@@ -193,10 +201,10 @@ local function CreateCastBarOptions()
                         type = "color",
                         name = "Custom Color",
                         desc = "Used when class color is disabled",
-                    order = 23,
-                    width = "normal",
-                    hasAlpha = true,
-                    get = function()
+                        order = 23,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
                             local c = NephUI.db.profile.castBar.color
                             if c then
                                 return c[1], c[2], c[3], c[4] or 1
@@ -232,7 +240,9 @@ local function CreateCastBarOptions()
                         name = "Text Size",
                         order = 25,
                         width = "normal",
-                        min = 6, max = 20, step = 1,
+                        min = 6,
+                        max = 20,
+                        step = 1,
                         get = function() return NephUI.db.profile.castBar.textSize end,
                         set = function(_, val)
                             NephUI.db.profile.castBar.textSize = val
@@ -278,7 +288,8 @@ local function CreateCastBarOptions()
                     testCast = {
                         type  = "execute",
                         name  = "Test Target Cast Bar",
-                        desc  = "Show a fake cast so you can preview and tweak the bar without a target casting. Unit Must Be active to test.",
+                        desc  =
+                        "Show a fake cast so you can preview and tweak the bar without a target casting. Unit Must Be active to test.",
                         order = 3,
                         func  = function()
                             NephUI:ShowTestTargetCastBar()
@@ -336,7 +347,9 @@ local function CreateCastBarOptions()
                         name = "Height",
                         order = 12,
                         width = "normal",
-                        min = 6, max = 40, step = 1,
+                        min = 6,
+                        max = 80,
+                        step = 1,
                         get = function() return NephUI.db.profile.targetCastBar.height end,
                         set = function(_, val)
                             NephUI.db.profile.targetCastBar.height = val
@@ -349,7 +362,9 @@ local function CreateCastBarOptions()
                         desc = "0 = automatic width based on anchor",
                         order = 13,
                         width = "normal",
-                        min = 0, max = 1000, step = 1,
+                        min = 0,
+                        max = 1000,
+                        step = 1,
                         get = function() return NephUI.db.profile.targetCastBar.width end,
                         set = function(_, val)
                             NephUI.db.profile.targetCastBar.width = val
@@ -362,7 +377,9 @@ local function CreateCastBarOptions()
                         desc = "Distance from the anchor frame",
                         order = 14,
                         width = "full",
-                        min = -500, max = 500, step = 1,
+                        min = -500,
+                        max = 500,
+                        step = 1,
                         get = function() return NephUI.db.profile.targetCastBar.offsetY end,
                         set = function(_, val)
                             NephUI.db.profile.targetCastBar.offsetY = val
@@ -375,14 +392,16 @@ local function CreateCastBarOptions()
                         desc = "Horizontal distance from the anchor point",
                         order = 15,
                         width = "full",
-                        min = -500, max = 500, step = 1,
+                        min = -500,
+                        max = 500,
+                        step = 1,
                         get = function() return NephUI.db.profile.targetCastBar.offsetX or 0 end,
                         set = function(_, val)
                             NephUI.db.profile.targetCastBar.offsetX = val
                             NephUI:UpdateTargetCastBarLayout()
                         end,
                     },
-                    
+
                     appearanceHeader = {
                         type = "header",
                         name = "Appearance",
@@ -401,7 +420,7 @@ local function CreateCastBarOptions()
                             end
                             return names
                         end,
-                        get = function() 
+                        get = function()
                             local override = NephUI.db.profile.targetCastBar.texture
                             if override and override ~= "" then
                                 return override
@@ -457,7 +476,9 @@ local function CreateCastBarOptions()
                         name = "Text Size",
                         order = 24,
                         width = "normal",
-                        min = 6, max = 20, step = 1,
+                        min = 6,
+                        max = 20,
+                        step = 1,
                         get = function() return NephUI.db.profile.targetCastBar.textSize end,
                         set = function(_, val)
                             NephUI.db.profile.targetCastBar.textSize = val
@@ -503,7 +524,8 @@ local function CreateCastBarOptions()
                     testCast = {
                         type  = "execute",
                         name  = "Test Focus Cast Bar",
-                        desc  = "Show a fake cast so you can preview and tweak the bar without a focus casting. Unit Must Be active to test.",
+                        desc  =
+                        "Show a fake cast so you can preview and tweak the bar without a focus casting. Unit Must Be active to test.",
                         order = 3,
                         func  = function()
                             NephUI:ShowTestFocusCastBar()
@@ -561,7 +583,9 @@ local function CreateCastBarOptions()
                         name = "Height",
                         order = 12,
                         width = "normal",
-                        min = 6, max = 40, step = 1,
+                        min = 6,
+                        max = 80,
+                        step = 1,
                         get = function() return NephUI.db.profile.focusCastBar.height end,
                         set = function(_, val)
                             NephUI.db.profile.focusCastBar.height = val
@@ -574,7 +598,9 @@ local function CreateCastBarOptions()
                         desc = "0 = automatic width based on anchor",
                         order = 13,
                         width = "normal",
-                        min = 0, max = 1000, step = 1,
+                        min = 0,
+                        max = 1000,
+                        step = 1,
                         get = function() return NephUI.db.profile.focusCastBar.width end,
                         set = function(_, val)
                             NephUI.db.profile.focusCastBar.width = val
@@ -587,7 +613,9 @@ local function CreateCastBarOptions()
                         desc = "Distance from the anchor frame",
                         order = 14,
                         width = "full",
-                        min = -500, max = 500, step = 1,
+                        min = -500,
+                        max = 500,
+                        step = 1,
                         get = function() return NephUI.db.profile.focusCastBar.offsetY end,
                         set = function(_, val)
                             NephUI.db.profile.focusCastBar.offsetY = val
@@ -600,14 +628,16 @@ local function CreateCastBarOptions()
                         desc = "Horizontal distance from the anchor point",
                         order = 15,
                         width = "full",
-                        min = -500, max = 500, step = 1,
+                        min = -500,
+                        max = 500,
+                        step = 1,
                         get = function() return NephUI.db.profile.focusCastBar.offsetX or 0 end,
                         set = function(_, val)
                             NephUI.db.profile.focusCastBar.offsetX = val
                             NephUI:UpdateFocusCastBarLayout()
                         end,
                     },
-                    
+
                     appearanceHeader = {
                         type = "header",
                         name = "Appearance",
@@ -626,7 +656,7 @@ local function CreateCastBarOptions()
                             end
                             return names
                         end,
-                        get = function() 
+                        get = function()
                             local override = NephUI.db.profile.focusCastBar.texture
                             if override and override ~= "" then
                                 return override
@@ -682,7 +712,9 @@ local function CreateCastBarOptions()
                         name = "Text Size",
                         order = 24,
                         width = "normal",
-                        min = 6, max = 20, step = 1,
+                        min = 6,
+                        max = 20,
+                        step = 1,
                         get = function() return NephUI.db.profile.focusCastBar.textSize end,
                         set = function(_, val)
                             NephUI.db.profile.focusCastBar.textSize = val
@@ -708,4 +740,3 @@ local function CreateCastBarOptions()
 end
 
 ns.CreateCastBarOptions = CreateCastBarOptions
-
