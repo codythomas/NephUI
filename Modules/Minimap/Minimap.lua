@@ -310,7 +310,7 @@ local function CreateFPS()
         fpsDisplay:SetText(string.format("%d FPS", fps))
         
         -- Update at configured frequency
-        local updateFrequency = currentDb.fps.updateFrequency or 0.5
+        local updateFrequency = currentDb.fps.updateFrequency or 2.0
         fpsTimer = C_Timer.NewTimer(updateFrequency, UpdateFPS)
     end
     
@@ -586,16 +586,22 @@ local function ManageBlizzardButtons()
     
     -- Missions/garrison buttons - handle both expansion and garrison buttons
     if ExpansionLandingPageMinimapButton then
+        -- Keep it visible by default; only hide when the user explicitly requests it
+        ExpansionLandingPageMinimapButton:SetParent(Minimap)
+        ExpansionLandingPageMinimapButton:SetFrameStrata("MEDIUM")
+        ExpansionLandingPageMinimapButton:SetFrameLevel(Minimap:GetFrameLevel() + 10)
+
         if db.hideMissionsButton then
             ExpansionLandingPageMinimapButton:Hide()
-            hooksecurefunc(ExpansionLandingPageMinimapButton, "Show", function(self)
-                self:Hide()
-            end)
         else
             ExpansionLandingPageMinimapButton:Show()
+            local offsetX = (db.missionsButton and db.missionsButton.offsetX) or 0
+            local offsetY = (db.missionsButton and db.missionsButton.offsetY) or 0
+            ExpansionLandingPageMinimapButton:ClearAllPoints()
+            ExpansionLandingPageMinimapButton:SetPoint("TOPLEFT", Minimap, "TOPLEFT", offsetX, offsetY)
         end
     end
-    
+
     -- Handle GarrisonLandingPageMinimapButton if it exists
     if GarrisonLandingPageMinimapButton then
         if db.hideMissionsButton then

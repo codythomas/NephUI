@@ -35,9 +35,9 @@ local function UpdateUnitFrame(unit)
         -- Resolve media first in case textures changed
         NephUI.UnitFrames:ResolveMedia()
         
-        -- For boss frames, update all boss frames (boss1-boss5)
+        -- For boss frames, update all boss frames (boss1-boss8)
         if unit == "boss" then
-            for i = 1, 5 do
+            for i = 1, 8 do
                 NephUI.UnitFrames:UpdateUnitFrame("boss" .. i)
             end
         else
@@ -74,10 +74,256 @@ local function GetFramePositionInUIParent(frame)
     return "CENTER", "CENTER", offsetX, offsetY
 end
 
+-- Boss-specific tab functions
+local function CreateBossFrameTab()
+    local DB = GetUnitDB("boss")
+    if not DB.Frame then DB.Frame = {} end
+
+    return {
+        type = "group",
+        name = "Frame",
+        order = 2,
+        args = {
+            -- Size Section
+            sizeHeader = {
+                type = "header",
+                name = "Size",
+                order = 10,
+            },
+            width = {
+                type = "range",
+                name = "Width",
+                desc = "Frame width",
+                order = 11,
+                width = "full",
+                min = 50, max = 1000, step = 1,
+                get = function()
+                    return DB.Frame.Width or 244
+                end,
+                set = function(_, val)
+                    DB.Frame.Width = val
+                    UpdateUnitFrame("boss")
+                    -- Reposition all boss frames when size changes
+                    if NephUI.UnitFrames and NephUI.UnitFrames.LayoutBossFrames then
+                        NephUI.UnitFrames:LayoutBossFrames()
+                    end
+                end,
+            },
+            height = {
+                type = "range",
+                name = "Height",
+                desc = "Frame height",
+                order = 12,
+                width = "full",
+                min = 10, max = 500, step = 1,
+                get = function()
+                    return DB.Frame.Height or 42
+                end,
+                set = function(_, val)
+                    DB.Frame.Height = val
+                    UpdateUnitFrame("boss")
+                    -- Reposition all boss frames when size changes
+                    if NephUI.UnitFrames and NephUI.UnitFrames.LayoutBossFrames then
+                        NephUI.UnitFrames:LayoutBossFrames()
+                    end
+                end,
+            },
+
+            -- Positioning Section
+            positioningHeader = {
+                type = "header",
+                name = "Positioning",
+                order = 15,
+            },
+            xPosition = {
+                type = "range",
+                name = "X Position",
+                desc = "Horizontal position of boss frames",
+                order = 16,
+                width = "full",
+                min = -1000, max = 1000, step = 1,
+                get = function()
+                    local db = NephUI.db.profile.unitFrames
+                    return (db.boss and db.boss.OffsetX) or 0
+                end,
+                set = function(_, val)
+                    local db = NephUI.db.profile.unitFrames
+                    if not db.boss then db.boss = {} end
+                    db.boss.OffsetX = val
+                    if NephUI.UnitFrames and NephUI.UnitFrames.LayoutBossFrames then
+                        NephUI.UnitFrames:LayoutBossFrames()
+                    end
+                end,
+            },
+            yPosition = {
+                type = "range",
+                name = "Y Position",
+                desc = "Vertical position of boss frames",
+                order = 17,
+                width = "full",
+                min = -1000, max = 1000, step = 1,
+                get = function()
+                    local db = NephUI.db.profile.unitFrames
+                    return (db.boss and db.boss.OffsetY) or 0
+                end,
+                set = function(_, val)
+                    local db = NephUI.db.profile.unitFrames
+                    if not db.boss then db.boss = {} end
+                    db.boss.OffsetY = val
+                    if NephUI.UnitFrames and NephUI.UnitFrames.LayoutBossFrames then
+                        NephUI.UnitFrames:LayoutBossFrames()
+                    end
+                end,
+            },
+            growthDirection = {
+                type = "select",
+                name = "Growth Direction",
+                desc = "Direction boss frames grow when multiple are shown",
+                order = 18,
+                width = "full",
+                values = {
+                    ["UP"] = "Up",
+                    ["DOWN"] = "Down",
+                },
+                get = function()
+                    local db = NephUI.db.profile.unitFrames
+                    return (db.boss and db.boss.GrowthDirection) or "UP"
+                end,
+                set = function(_, val)
+                    local db = NephUI.db.profile.unitFrames
+                    if not db.boss then db.boss = {} end
+                    db.boss.GrowthDirection = val
+                    if NephUI.UnitFrames and NephUI.UnitFrames.LayoutBossFrames then
+                        NephUI.UnitFrames:LayoutBossFrames()
+                    end
+                end,
+            },
+            spacing = {
+                type = "range",
+                name = "Spacing",
+                desc = "Vertical spacing between boss frames",
+                order = 19,
+                width = "full",
+                min = 0, max = 100, step = 1,
+                get = function()
+                    local db = NephUI.db.profile.unitFrames
+                    return (db.boss and db.boss.Spacing) or 26
+                end,
+                set = function(_, val)
+                    local db = NephUI.db.profile.unitFrames
+                    if not db.boss then db.boss = {} end
+                    db.boss.Spacing = val
+                    if NephUI.UnitFrames and NephUI.UnitFrames.LayoutBossFrames then
+                        NephUI.UnitFrames:LayoutBossFrames()
+                    end
+                end,
+            },
+        },
+    }
+end
+
+local function CreateBossPositioningTab()
+    return {
+        type = "group",
+        name = "Positioning",
+        order = 5,
+        args = {
+            header = {
+                type = "header",
+                name = "Boss Frame Positioning",
+                order = 1,
+            },
+            xPosition = {
+                type = "range",
+                name = "X Position",
+                desc = "Horizontal position of boss frames",
+                order = 2,
+                width = "full",
+                min = -1000, max = 1000, step = 1,
+                get = function()
+                    local db = NephUI.db.profile.unitFrames
+                    return (db.boss and db.boss.OffsetX) or 0
+                end,
+                set = function(_, val)
+                    local db = NephUI.db.profile.unitFrames
+                    if not db.boss then db.boss = {} end
+                    db.boss.OffsetX = val
+                    if NephUI.UnitFrames and NephUI.UnitFrames.LayoutBossFrames then
+                        NephUI.UnitFrames:LayoutBossFrames()
+                    end
+                end,
+            },
+            yPosition = {
+                type = "range",
+                name = "Y Position",
+                desc = "Vertical position of boss frames",
+                order = 3,
+                width = "full",
+                min = -1000, max = 1000, step = 1,
+                get = function()
+                    local db = NephUI.db.profile.unitFrames
+                    return (db.boss and db.boss.OffsetY) or 0
+                end,
+                set = function(_, val)
+                    local db = NephUI.db.profile.unitFrames
+                    if not db.boss then db.boss = {} end
+                    db.boss.OffsetY = val
+                    if NephUI.UnitFrames and NephUI.UnitFrames.LayoutBossFrames then
+                        NephUI.UnitFrames:LayoutBossFrames()
+                    end
+                end,
+            },
+            growthDirection = {
+                type = "select",
+                name = "Growth Direction",
+                desc = "Direction boss frames grow when multiple are shown",
+                order = 4,
+                width = "full",
+                values = {
+                    ["UP"] = "Up",
+                    ["DOWN"] = "Down",
+                },
+                get = function()
+                    local db = NephUI.db.profile.unitFrames
+                    return (db.boss and db.boss.GrowthDirection) or "DOWN"
+                end,
+                set = function(_, val)
+                    local db = NephUI.db.profile.unitFrames
+                    if not db.boss then db.boss = {} end
+                    db.boss.GrowthDirection = val
+                    if NephUI.UnitFrames and NephUI.UnitFrames.LayoutBossFrames then
+                        NephUI.UnitFrames:LayoutBossFrames()
+                    end
+                end,
+            },
+            spacing = {
+                type = "range",
+                name = "Spacing",
+                desc = "Vertical spacing between boss frames",
+                order = 5,
+                width = "full",
+                min = 0, max = 100, step = 1,
+                get = function()
+                    local db = NephUI.db.profile.unitFrames
+                    return (db.boss and db.boss.Spacing) or 26
+                end,
+                set = function(_, val)
+                    local db = NephUI.db.profile.unitFrames
+                    if not db.boss then db.boss = {} end
+                    db.boss.Spacing = val
+                    if NephUI.UnitFrames and NephUI.UnitFrames.LayoutBossFrames then
+                        NephUI.UnitFrames:LayoutBossFrames()
+                    end
+                end,
+            },
+        },
+    }
+end
+
 -- Helper to create unit frame options per frame
 local function CreateUnitFrameOptions(unit, displayName, order)
     local unitKey = unit:gsub("^%l", string.upper) -- Capitalize first letter
-    local hasPowerBar = (unit == "player" or unit == "target" or unit == "focus")
+    local hasPowerBar = (unit == "player" or unit == "target" or unit == "focus" or unit == "boss")
     
     -- Helper to create General tab (includes enable toggle and color options)
     local function CreateGeneralTab()
@@ -113,7 +359,28 @@ local function CreateUnitFrameOptions(unit, displayName, order)
                     name = " ",
                     order = 3,
                 },
-                
+
+                -- Boss preview toggle (only for boss frames)
+                previewMode = unit == "boss" and {
+                    type = "toggle",
+                    name = "Preview Mode",
+                    desc = "Show boss frames with fake data for testing layout and appearance",
+                    order = 4,
+                    width = "full",
+                    get = function()
+                        return NephUI.UnitFrames and NephUI.UnitFrames.BossPreviewMode or false
+                    end,
+                    set = function(_, val)
+                        if NephUI.UnitFrames then
+                            if val then
+                                NephUI.UnitFrames:ShowBossFramesPreview()
+                            else
+                                NephUI.UnitFrames:HideBossFramesPreview()
+                            end
+                        end
+                    end,
+                } or nil,
+
                 -- Color Options
                 colorsHeader = {
                     type = "header",
@@ -230,14 +497,14 @@ local function CreateUnitFrameOptions(unit, displayName, order)
                         UpdateUnitFrame(unit)
                     end,
                 },
-                
+
                 -- Anchoring Section
-                anchorHeader = {
+                anchorHeader = unit ~= "boss" and {
                     type = "header",
                     name = "Anchoring",
                     order = 20,
-                },
-                anchorToCooldown = {
+                } or nil,
+                anchorToCooldown = unit ~= "boss" and {
                     type = "toggle",
                     name = "Anchor to Essential Cooldown Viewer",
                     desc = "Automatically anchor this frame to EssentialCooldownViewer. Only available for Player and Target frames.",
@@ -293,7 +560,7 @@ local function CreateUnitFrameOptions(unit, displayName, order)
                         end
                     end,
                 },
-                anchorFrame = {
+                anchorFrame = unit ~= "boss" and {
                     type = "input",
                     name = "Anchor Frame",
                     desc = "Frame name to anchor to (e.g., EssentialCooldownViewer, NephUI_Player, NephUI_Target, UIParent)",
@@ -312,8 +579,8 @@ local function CreateUnitFrameOptions(unit, displayName, order)
                             end)
                         end
                     end,
-                },
-                anchorFrom = {
+                } or nil,
+                anchorFrom = unit ~= "boss" and {
                     type = "select",
                     name = "Anchor From",
                     desc = "Anchor point on the frame",
@@ -327,8 +594,8 @@ local function CreateUnitFrameOptions(unit, displayName, order)
                         DB.Frame.AnchorFrom = val
                         UpdateUnitFrame(unit)
                     end,
-                },
-                anchorTo = {
+                } or nil,
+                anchorTo = unit ~= "boss" and {
                     type = "select",
                     name = "Anchor To",
                     desc = "Anchor point on parent",
@@ -342,7 +609,7 @@ local function CreateUnitFrameOptions(unit, displayName, order)
                         DB.Frame.AnchorTo = val
                         UpdateUnitFrame(unit)
                     end,
-                },
+                } or nil,
                 offsetX = {
                     type = "range",
                     name = "X Offset",
@@ -599,6 +866,21 @@ local function CreateUnitFrameOptions(unit, displayName, order)
                         UpdateUnitFrame(unit)
                     end,
                 },
+                nameMaxLength = {
+                    type = "range",
+                    name = "Max Name Length",
+                    desc = "Clamp displayed name length (0 = no limit)",
+                    order = 17.5,
+                    width = "normal",
+                    min = 0, max = 40, step = 1,
+                    get = function()
+                        return DB.Tags.Name.MaxLength or 0
+                    end,
+                    set = function(_, val)
+                        DB.Tags.Name.MaxLength = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
                 nameFontSize = {
                     type = "range",
                     name = "Name Font Size",
@@ -613,6 +895,39 @@ local function CreateUnitFrameOptions(unit, displayName, order)
                         UpdateUnitFrame(unit)
                     end,
                 },
+                inlineTargetTarget = (unit == "target") and {
+                    type = "toggle",
+                    name = "Show Target of Target Inline",
+                    desc = "Append target of target next to the target name without hiding the Target Target frame",
+                    order = 19,
+                    width = "full",
+                    get = function()
+                        return DB.Tags.Name.InlineTargetTarget or false
+                    end,
+                    set = function(_, val)
+                        DB.Tags.Name.InlineTargetTarget = val
+                        UpdateUnitFrame(unit)
+                        UpdateUnitFrame("targettarget")
+                    end,
+                } or nil,
+                inlineTargetTargetSeparator = (unit == "target") and {
+                    type = "input",
+                    name = "Inline Separator",
+                    desc = "Separator shown between target and its target when inline is enabled",
+                    order = 19.5,
+                    width = "half",
+                    get = function()
+                        return DB.Tags.Name.TargetTargetSeparator or " » "
+                    end,
+                    set = function(_, val)
+                        if val == nil or val == "" then
+                            DB.Tags.Name.TargetTargetSeparator = " » "
+                        else
+                            DB.Tags.Name.TargetTargetSeparator = val
+                        end
+                        UpdateUnitFrame(unit)
+                    end,
+                } or nil,
                 -- Health Tag
                 healthHeader = {
                     type = "header",
@@ -924,267 +1239,622 @@ local function CreateUnitFrameOptions(unit, displayName, order)
         }
     end
     
-    -- Helper to create Auras tab (only for target)
-    local function CreateAurasTab()
+    -- Helper to create Debuffs tab (only for target)
+    local function CreateDebuffsTab()
         local DB = GetUnitDB(unit)
         if not DB.Auras then DB.Auras = {} end
-        
+        if not DB.Auras.Debuffs then DB.Auras.Debuffs = {} end
+
         return {
             type = "group",
-            name = "Auras",
-            order = 4,
+            name = "Debuffs",
+            order = 5,
             args = {
                 header = {
                     type = "header",
-                    name = "Target Aura Display Settings",
+                    name = displayName .. " Debuff Display Settings",
                     order = 1,
                 },
-                width = {
-                    type = "range",
-                    name = "Aura Bar Width",
-                    desc = "Width of the aura display area (0 = use frame width)",
+                enabled = {
+                    type = "toggle",
+                    name = "Enable Debuffs",
+                    desc = "Display harmful debuffs applied by you",
                     order = 2,
                     width = "full",
-                    min = 0, max = 1000, step = 1,
                     get = function()
-                        return DB.Auras.Width or 0
+                        return DB.Auras.Debuffs.Enabled ~= false
                     end,
                     set = function(_, val)
-                        DB.Auras.Width = val
+                        DB.Auras.Debuffs.Enabled = val
                         UpdateUnitFrame(unit)
                     end,
                 },
-                height = {
-                    type = "range",
-                    name = "Aura Bar Height",
-                    desc = "Height of each aura icon row (0 = use frame height)",
+                preview = {
+                    type = "toggle",
+                    name = "Preview Debuffs",
+                    desc = "Show fake debuff icons to preview layout",
                     order = 3,
                     width = "full",
-                    min = 0, max = 100, step = 1,
                     get = function()
-                        return DB.Auras.Height or 18
+                        return DB.Auras.Debuffs.Preview or false
                     end,
                     set = function(_, val)
-                        DB.Auras.Height = val
+                        DB.Auras.Debuffs.Preview = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                anchorPoint = {
+                    type = "select",
+                    name = "Anchor Point",
+                    desc = "Point on the frame where debuffs should anchor",
+                    order = 4,
+                    width = "normal",
+                    values = {
+                        TOPLEFT = "Top Left",
+                        TOPRIGHT = "Top Right",
+                        BOTTOMLEFT = "Bottom Left",
+                        BOTTOMRIGHT = "Bottom Right",
+                        TOP = "Top",
+                        BOTTOM = "Bottom",
+                        LEFT = "Left",
+                        RIGHT = "Right",
+                        CENTER = "Center",
+                    },
+                    get = function()
+                        return DB.Auras.Debuffs.AnchorPoint or "TOPLEFT"
+                    end,
+                    set = function(_, val)
+                        DB.Auras.Debuffs.AnchorPoint = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                growthDirection = {
+                    type = "select",
+                    name = "Growth Direction",
+                    desc = "Direction debuff icons grow within each row",
+                    order = 5,
+                    width = "normal",
+                    values = {
+                        RIGHT = "Right",
+                        LEFT = "Left",
+                        DOWN = "Down",
+                        UP = "Up",
+                    },
+                    get = function()
+                        return DB.Auras.Debuffs.GrowthDirection or "RIGHT"
+                    end,
+                    set = function(_, val)
+                        DB.Auras.Debuffs.GrowthDirection = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                rowGrowthDirection = {
+                    type = "select",
+                    name = "Row Growth Direction",
+                    desc = "Direction rows grow relative to each other",
+                    order = 6,
+                    width = "normal",
+                    values = {
+                        DOWN = "Down",
+                        UP = "Up",
+                        RIGHT = "Right",
+                        LEFT = "Left",
+                    },
+                    get = function()
+                        return DB.Auras.Debuffs.RowGrowthDirection or "DOWN"
+                    end,
+                    set = function(_, val)
+                        DB.Auras.Debuffs.RowGrowthDirection = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                iconSize = {
+                    type = "range",
+                    name = "Icon Size",
+                    desc = "Size of individual debuff icons",
+                    order = 7,
+                    width = "normal",
+                    min = 12, max = 64, step = 1,
+                    get = function()
+                        return DB.Auras.Debuffs.IconSize or 44
+                    end,
+                    set = function(_, val)
+                        DB.Auras.Debuffs.IconSize = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                iconsPerRow = {
+                    type = "range",
+                    name = "Icons Per Row",
+                    desc = "Number of debuff icons to display per row",
+                    order = 8,
+                    width = "normal",
+                    min = 1, max = 20, step = 1,
+                    get = function()
+                        return DB.Auras.Debuffs.IconsPerRow or 6
+                    end,
+                    set = function(_, val)
+                        DB.Auras.Debuffs.IconsPerRow = val
                         UpdateUnitFrame(unit)
                     end,
                 },
                 spacing = {
                     type = "range",
-                    name = "Aura Spacing",
-                    desc = "Spacing between aura icons",
-                    order = 4,
-                    width = "full",
+                    name = "Debuff Spacing",
+                    desc = "Spacing between debuff icons",
+                    order = 9,
+                    width = "normal",
                     min = 0, max = 50, step = 1,
                     get = function()
-                        return DB.Auras.Spacing or 2
+                        return DB.Auras.Debuffs.Spacing or 2
                     end,
                     set = function(_, val)
-                        DB.Auras.Spacing = val
-                        UpdateUnitFrame(unit)
-                    end,
-                },
-                alpha = {
-                    type = "range",
-                    name = "Aura Alpha",
-                    desc = "Transparency of aura icons",
-                    order = 5,
-                    width = "full",
-                    min = 0, max = 1, step = 0.1,
-                    get = function()
-                        return DB.Auras.Alpha or 1
-                    end,
-                    set = function(_, val)
-                        DB.Auras.Alpha = val
-                        UpdateUnitFrame(unit)
-                    end,
-                },
-                rowLimit = {
-                    type = "range",
-                    name = "Row Limit",
-                    desc = "Maximum number of rows to display (0 = unlimited)",
-                    order = 6,
-                    width = "full",
-                    min = 0, max = 10, step = 1,
-                    get = function()
-                        return DB.Auras.RowLimit or 0
-                    end,
-                    set = function(_, val)
-                        DB.Auras.RowLimit = val
+                        DB.Auras.Debuffs.Spacing = val
                         UpdateUnitFrame(unit)
                     end,
                 },
                 offsetX = {
                     type = "range",
-                    name = "Aura Offset X",
+                    name = "Debuff Offset X",
                     desc = "Horizontal offset from frame",
-                    order = 7,
+                    order = 10,
                     width = "normal",
                     min = -1000, max = 1000, step = 1,
                     get = function()
-                        return DB.Auras.OffsetX or 0
+                        return DB.Auras.Debuffs.OffsetX or 0
                     end,
                     set = function(_, val)
-                        DB.Auras.OffsetX = val
+                        DB.Auras.Debuffs.OffsetX = val
                         UpdateUnitFrame(unit)
                     end,
                 },
                 offsetY = {
                     type = "range",
-                    name = "Aura Offset Y",
+                    name = "Debuff Offset Y",
                     desc = "Vertical offset from frame top",
-                    order = 8,
+                    order = 11,
                     width = "normal",
                     min = -1000, max = 1000, step = 1,
                     get = function()
-                        return DB.Auras.OffsetY or 2
+                        return DB.Auras.Debuffs.OffsetY or 2
                     end,
                     set = function(_, val)
-                        DB.Auras.OffsetY = val
+                        DB.Auras.Debuffs.OffsetY = val
                         UpdateUnitFrame(unit)
                     end,
                 },
-                showBuffs = {
-                    type = "toggle",
-                    name = "Show Buffs",
-                    desc = "Display helpful buffs",
-                    order = 9,
-                    width = "normal",
+                alpha = {
+                    type = "range",
+                    name = "Debuff Alpha",
+                    desc = "Transparency of debuff icons",
+                    order = 12,
+                    width = "full",
+                    min = 0, max = 1, step = 0.1,
                     get = function()
-                        return DB.Auras.ShowBuffs ~= false
+                        return DB.Auras.Debuffs.Alpha or 1
                     end,
                     set = function(_, val)
-                        DB.Auras.ShowBuffs = val
+                        DB.Auras.Debuffs.Alpha = val
                         UpdateUnitFrame(unit)
                     end,
                 },
-                showDebuffs = {
-                    type = "toggle",
-                    name = "Show Debuffs",
-                    desc = "Display harmful debuffs",
-                    order = 10,
-                    width = "normal",
-                    get = function()
-                        return DB.Auras.ShowDebuffs ~= false
-                    end,
-                    set = function(_, val)
-                        DB.Auras.ShowDebuffs = val
-                        UpdateUnitFrame(unit)
-                    end,
-                },
-                spacer1 = {
+                spacerCooldown = {
                     type = "description",
                     name = " ",
-                    order = 11,
+                    order = 13,
                 },
                 cooldownTextHeader = {
                     type = "header",
                     name = "Cooldown Text",
-                    order = 12,
+                    order = 14,
                 },
                 cooldownFontSize = {
                     type = "range",
                     name = "Cooldown Font Size",
-                    desc = "Font size for cooldown countdown text on aura icons",
-                    order = 13,
+                    desc = "Font size for cooldown countdown text on debuff icons",
+                    order = 15,
                     width = "full",
                     min = 8, max = 48, step = 1,
                     get = function()
-                        return DB.Auras.cooldownFontSize or 
+                        return DB.Auras.Debuffs.cooldownFontSize or
                                (NephUI.db.profile.viewers.general and NephUI.db.profile.viewers.general.cooldownFontSize) or 18
                     end,
                     set = function(_, val)
-                        DB.Auras.cooldownFontSize = val
+                        DB.Auras.Debuffs.cooldownFontSize = val
                         -- Refresh all cooldown fonts
                         if NephUI.ApplyGlobalFont then
                             NephUI:ApplyGlobalFont()
                         end
-                        UpdateUnitFrame(unit)
+                        -- Force refresh unit frame auras and their cooldowns
+                        local unitFrameName = (unit == "player") and "NephUI_Player" or (unit == "focus") and "NephUI_Focus" or "NephUI_Target"
+                        local unitFrame = _G[unitFrameName]
+                        if unitFrame then
+                            UpdateUnitFrame(unit)
+                            -- Refresh existing cooldown frames
+                            if unitFrame.debuffIcons then
+                                for _, icon in ipairs(unitFrame.debuffIcons) do
+                                    if icon and icon.cooldown then
+                                        -- Trigger cooldown font refresh
+                                        if icon.cooldown._nephui_fontString then
+                                            local debuffSettings = DB.Auras.Debuffs
+                                            local fontSize = debuffSettings.cooldownFontSize or
+                                                          (NephUI.db.profile.viewers.general and NephUI.db.profile.viewers.general.cooldownFontSize) or 18
+                                            local textColor = debuffSettings.cooldownTextColor or
+                                                           (NephUI.db.profile.viewers.general and NephUI.db.profile.viewers.general.cooldownTextColor) or {1, 1, 1, 1}
+                                            local fontPath = NephUI:GetGlobalFont()
+                                            if fontPath then
+                                                icon.cooldown._nephui_fontString:SetFont(fontPath, fontSize, "OUTLINE")
+                                                icon.cooldown._nephui_fontString:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4] or 1)
+                                                -- No shadow for target auras, they use outline instead
+                                                icon.cooldown._nephui_fontString:SetShadowOffset(0, 0)
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
                     end,
-                },
-                spacer2 = {
-                    type = "description",
-                    name = " ",
-                    order = 14,
                 },
                 cooldownTextColor = {
                     type = "color",
                     name = "Cooldown Text Color",
-                    desc = "Color for cooldown countdown text on aura icons",
-                    order = 15,
+                    desc = "Color for cooldown countdown text on debuff icons",
+                    order = 16,
                     width = "full",
                     hasAlpha = true,
                     get = function()
-                        local c = DB.Auras.cooldownTextColor or 
+                        local c = DB.Auras.Debuffs.cooldownTextColor or
                                  (NephUI.db.profile.viewers.general and NephUI.db.profile.viewers.general.cooldownTextColor) or {1, 1, 1, 1}
                         return c[1], c[2], c[3], c[4] or 1
                     end,
                     set = function(_, r, g, b, a)
-                        DB.Auras.cooldownTextColor = {r, g, b, a or 1}
+                        DB.Auras.Debuffs.cooldownTextColor = {r, g, b, a or 1}
                         -- Refresh all cooldown fonts
                         if NephUI.ApplyGlobalFont then
                             NephUI:ApplyGlobalFont()
                         end
-                        UpdateUnitFrame(unit)
+                        -- Force refresh unit frame auras and their cooldowns
+                        local unitFrameName = (unit == "player") and "NephUI_Player" or (unit == "focus") and "NephUI_Focus" or "NephUI_Target"
+                        local unitFrame = _G[unitFrameName]
+                        if unitFrame then
+                            UpdateUnitFrame(unit)
+                            -- Refresh existing cooldown frames
+                            if unitFrame.debuffIcons then
+                                for _, icon in ipairs(unitFrame.debuffIcons) do
+                                    if icon and icon.cooldown then
+                                        -- Trigger cooldown font refresh
+                                        if icon.cooldown._nephui_fontString then
+                                            local debuffSettings = DB.Auras.Debuffs
+                                            local fontSize = debuffSettings.cooldownFontSize or
+                                                          (NephUI.db.profile.viewers.general and NephUI.db.profile.viewers.general.cooldownFontSize) or 18
+                                            local textColor = debuffSettings.cooldownTextColor or
+                                                           (NephUI.db.profile.viewers.general and NephUI.db.profile.viewers.general.cooldownTextColor) or {1, 1, 1, 1}
+                                            local fontPath = NephUI:GetGlobalFont()
+                                            if fontPath then
+                                                icon.cooldown._nephui_fontString:SetFont(fontPath, fontSize, "OUTLINE")
+                                                icon.cooldown._nephui_fontString:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4] or 1)
+                                                -- No shadow for target auras, they use outline instead
+                                                icon.cooldown._nephui_fontString:SetShadowOffset(0, 0)
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
                     end,
-                },
-                spacer3 = {
-                    type = "description",
-                    name = " ",
-                    order = 16,
-                },
-                cooldownShadowGroup = {
-                    type = "group",
-                    name = "Cooldown Text Shadow",
-                    inline = true,
-                    order = 17,
-                    args = {
-                        cooldownShadowOffsetX = {
-                            type = "range",
-                            name = "Shadow Offset X",
-                            desc = "Horizontal shadow offset for cooldown text (positive = right, negative = left)",
-                            order = 1,
-                            width = "normal",
-                            min = -5, max = 5, step = 1,
-                            get = function()
-                                return DB.Auras.cooldownShadowOffsetX or 
-                                       (NephUI.db.profile.viewers.general and NephUI.db.profile.viewers.general.cooldownShadowOffsetX) or 1
-                            end,
-                            set = function(_, val)
-                                DB.Auras.cooldownShadowOffsetX = val
-                                -- Refresh all cooldown fonts
-                                if NephUI.ApplyGlobalFont then
-                                    NephUI:ApplyGlobalFont()
-                                end
-                                UpdateUnitFrame(unit)
-                            end,
-                        },
-                        cooldownShadowOffsetY = {
-                            type = "range",
-                            name = "Shadow Offset Y",
-                            desc = "Vertical shadow offset for cooldown text (positive = up, negative = down)",
-                            order = 2,
-                            width = "normal",
-                            min = -5, max = 5, step = 1,
-                            get = function()
-                                return DB.Auras.cooldownShadowOffsetY or 
-                                       (NephUI.db.profile.viewers.general and NephUI.db.profile.viewers.general.cooldownShadowOffsetY) or -1
-                            end,
-                            set = function(_, val)
-                                DB.Auras.cooldownShadowOffsetY = val
-                                -- Refresh all cooldown fonts
-                                if NephUI.ApplyGlobalFont then
-                                    NephUI:ApplyGlobalFont()
-                                end
-                                UpdateUnitFrame(unit)
-                            end,
-                        },
-                    },
                 },
             },
         }
     end
-    
+
+    -- Helper to create Buffs tab
+    local function CreateBuffsTab()
+        local DB = GetUnitDB(unit)
+        if not DB.Auras then DB.Auras = {} end
+        if not DB.Auras.Buffs then DB.Auras.Buffs = {} end
+
+        return {
+            type = "group",
+            name = "Buffs",
+            order = 4,
+            args = {
+                header = {
+                    type = "header",
+                    name = displayName .. " Buff Display Settings",
+                    order = 1,
+                },
+                enabled = {
+                    type = "toggle",
+                    name = "Enable Buffs",
+                    desc = "Display helpful buffs",
+                    order = 2,
+                    width = "full",
+                    get = function()
+                        return DB.Auras.Buffs.Enabled ~= false
+                    end,
+                    set = function(_, val)
+                        DB.Auras.Buffs.Enabled = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                preview = {
+                    type = "toggle",
+                    name = "Preview Buffs",
+                    desc = "Show fake buff icons to preview layout",
+                    order = 3,
+                    width = "full",
+                    get = function()
+                        return DB.Auras.Buffs.Preview or false
+                    end,
+                    set = function(_, val)
+                        DB.Auras.Buffs.Preview = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                anchorPoint = {
+                    type = "select",
+                    name = "Anchor Point",
+                    desc = "Point on the frame where buffs should anchor",
+                    order = 4,
+                    width = "normal",
+                    values = {
+                        TOPLEFT = "Top Left",
+                        TOPRIGHT = "Top Right",
+                        BOTTOMLEFT = "Bottom Left",
+                        BOTTOMRIGHT = "Bottom Right",
+                        TOP = "Top",
+                        BOTTOM = "Bottom",
+                        LEFT = "Left",
+                        RIGHT = "Right",
+                        CENTER = "Center",
+                    },
+                    get = function()
+                        return DB.Auras.Buffs.AnchorPoint or "TOPLEFT"
+                    end,
+                    set = function(_, val)
+                        DB.Auras.Buffs.AnchorPoint = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                growthDirection = {
+                    type = "select",
+                    name = "Growth Direction",
+                    desc = "Direction buff icons grow within each row",
+                    order = 5,
+                    width = "normal",
+                    values = {
+                        RIGHT = "Right",
+                        LEFT = "Left",
+                        DOWN = "Down",
+                        UP = "Up",
+                    },
+                    get = function()
+                        return DB.Auras.Buffs.GrowthDirection or "RIGHT"
+                    end,
+                    set = function(_, val)
+                        DB.Auras.Buffs.GrowthDirection = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                rowGrowthDirection = {
+                    type = "select",
+                    name = "Row Growth Direction",
+                    desc = "Direction rows grow relative to each other",
+                    order = 6,
+                    width = "normal",
+                    values = {
+                        DOWN = "Down",
+                        UP = "Up",
+                        RIGHT = "Right",
+                        LEFT = "Left",
+                    },
+                    get = function()
+                        return DB.Auras.Buffs.RowGrowthDirection or "DOWN"
+                    end,
+                    set = function(_, val)
+                        DB.Auras.Buffs.RowGrowthDirection = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                iconSize = {
+                    type = "range",
+                    name = "Icon Size",
+                    desc = "Size of individual buff icons",
+                    order = 7,
+                    width = "normal",
+                    min = 12, max = 64, step = 1,
+                    get = function()
+                        return DB.Auras.Buffs.IconSize or 44
+                    end,
+                    set = function(_, val)
+                        DB.Auras.Buffs.IconSize = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                iconsPerRow = {
+                    type = "range",
+                    name = "Icons Per Row",
+                    desc = "Number of buff icons to display per row",
+                    order = 8,
+                    width = "normal",
+                    min = 1, max = 20, step = 1,
+                    get = function()
+                        return DB.Auras.Buffs.IconsPerRow or 6
+                    end,
+                    set = function(_, val)
+                        DB.Auras.Buffs.IconsPerRow = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                spacing = {
+                    type = "range",
+                    name = "Buff Spacing",
+                    desc = "Spacing between buff icons",
+                    order = 9,
+                    width = "normal",
+                    min = 0, max = 50, step = 1,
+                    get = function()
+                        return DB.Auras.Buffs.Spacing or 2
+                    end,
+                    set = function(_, val)
+                        DB.Auras.Buffs.Spacing = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                offsetX = {
+                    type = "range",
+                    name = "Buff Offset X",
+                    desc = "Horizontal offset from frame",
+                    order = 10,
+                    width = "normal",
+                    min = -1000, max = 1000, step = 1,
+                    get = function()
+                        return DB.Auras.Buffs.OffsetX or 0
+                    end,
+                    set = function(_, val)
+                        DB.Auras.Buffs.OffsetX = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                offsetY = {
+                    type = "range",
+                    name = "Buff Offset Y",
+                    desc = "Vertical offset from frame top",
+                    order = 11,
+                    width = "normal",
+                    min = -1000, max = 1000, step = 1,
+                    get = function()
+                        return DB.Auras.Buffs.OffsetY or 2
+                    end,
+                    set = function(_, val)
+                        DB.Auras.Buffs.OffsetY = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                alpha = {
+                    type = "range",
+                    name = "Buff Alpha",
+                    desc = "Transparency of buff icons",
+                    order = 12,
+                    width = "full",
+                    min = 0, max = 1, step = 0.1,
+                    get = function()
+                        return DB.Auras.Buffs.Alpha or 1
+                    end,
+                    set = function(_, val)
+                        DB.Auras.Buffs.Alpha = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                spacerCooldown = {
+                    type = "description",
+                    name = " ",
+                    order = 13,
+                },
+                cooldownTextHeader = {
+                    type = "header",
+                    name = "Cooldown Text",
+                    order = 14,
+                },
+                cooldownFontSize = {
+                    type = "range",
+                    name = "Cooldown Font Size",
+                    desc = "Font size for cooldown countdown text on buff icons",
+                    order = 15,
+                    width = "full",
+                    min = 8, max = 48, step = 1,
+                    get = function()
+                        return DB.Auras.Buffs.cooldownFontSize or
+                               (NephUI.db.profile.viewers.general and NephUI.db.profile.viewers.general.cooldownFontSize) or 18
+                    end,
+                    set = function(_, val)
+                        DB.Auras.Buffs.cooldownFontSize = val
+                        -- Refresh all cooldown fonts
+                        if NephUI.ApplyGlobalFont then
+                            NephUI:ApplyGlobalFont()
+                        end
+                        -- Force refresh unit frame auras and their cooldowns
+                        local unitFrameName = (unit == "player") and "NephUI_Player" or (unit == "focus") and "NephUI_Focus" or "NephUI_Target"
+                        local unitFrame = _G[unitFrameName]
+                        if unitFrame then
+                            UpdateUnitFrame(unit)
+                            -- Refresh existing cooldown frames
+                            if unitFrame.buffIcons then
+                                for _, icon in ipairs(unitFrame.buffIcons) do
+                                    if icon and icon.cooldown then
+                                        -- Trigger cooldown font refresh
+                                        if icon.cooldown._nephui_fontString then
+                                            local buffSettings = DB.Auras.Buffs
+                                            local fontSize = buffSettings.cooldownFontSize or
+                                                          (NephUI.db.profile.viewers.general and NephUI.db.profile.viewers.general.cooldownFontSize) or 18
+                                            local textColor = buffSettings.cooldownTextColor or
+                                                           (NephUI.db.profile.viewers.general and NephUI.db.profile.viewers.general.cooldownTextColor) or {1, 1, 1, 1}
+                                            local fontPath = NephUI:GetGlobalFont()
+                                            if fontPath then
+                                                icon.cooldown._nephui_fontString:SetFont(fontPath, fontSize, "OUTLINE")
+                                                icon.cooldown._nephui_fontString:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4] or 1)
+                                                -- No shadow for target auras, they use outline instead
+                                                icon.cooldown._nephui_fontString:SetShadowOffset(0, 0)
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end,
+                },
+                cooldownTextColor = {
+                    type = "color",
+                    name = "Cooldown Text Color",
+                    desc = "Color for cooldown countdown text on buff icons",
+                    order = 16,
+                    width = "full",
+                    hasAlpha = true,
+                    get = function()
+                        local c = DB.Auras.Buffs.cooldownTextColor or
+                                 (NephUI.db.profile.viewers.general and NephUI.db.profile.viewers.general.cooldownTextColor) or {1, 1, 1, 1}
+                        return c[1], c[2], c[3], c[4] or 1
+                    end,
+                    set = function(_, r, g, b, a)
+                        DB.Auras.Buffs.cooldownTextColor = {r, g, b, a or 1}
+                        -- Refresh all cooldown fonts
+                        if NephUI.ApplyGlobalFont then
+                            NephUI:ApplyGlobalFont()
+                        end
+                        -- Force refresh unit frame auras and their cooldowns
+                        local unitFrameName = (unit == "player") and "NephUI_Player" or (unit == "focus") and "NephUI_Focus" or "NephUI_Target"
+                        local unitFrame = _G[unitFrameName]
+                        if unitFrame then
+                            UpdateUnitFrame(unit)
+                            -- Refresh existing cooldown frames
+                            if unitFrame.buffIcons then
+                                for _, icon in ipairs(unitFrame.buffIcons) do
+                                    if icon and icon.cooldown then
+                                        -- Trigger cooldown font refresh
+                                        if icon.cooldown._nephui_fontString then
+                                            local buffSettings = DB.Auras.Buffs
+                                            local fontSize = buffSettings.cooldownFontSize or
+                                                          (NephUI.db.profile.viewers.general and NephUI.db.profile.viewers.general.cooldownFontSize) or 18
+                                            local textColor = buffSettings.cooldownTextColor or
+                                                           (NephUI.db.profile.viewers.general and NephUI.db.profile.viewers.general.cooldownTextColor) or {1, 1, 1, 1}
+                                            local fontPath = NephUI:GetGlobalFont()
+                                            if fontPath then
+                                                icon.cooldown._nephui_fontString:SetFont(fontPath, fontSize, "OUTLINE")
+                                                icon.cooldown._nephui_fontString:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4] or 1)
+                                                -- No shadow for target auras, they use outline instead
+                                                icon.cooldown._nephui_fontString:SetShadowOffset(0, 0)
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end,
+                },
+            },
+        }
+    end
+
     -- Helper to create Absorb Bar tab (for player and target)
     local function CreateAbsorbBarTab()
         if unit ~= "player" and unit ~= "target" then return nil end
@@ -1307,10 +1977,310 @@ local function CreateUnitFrameOptions(unit, displayName, order)
         }
     end
     
+    -- Helper to create Status Indicators tab (player frame only)
+    local function CreateStatusIndicatorsTab()
+        if unit ~= "player" then return nil end
+        local DB = GetUnitDB(unit)
+        if not DB.StatusIndicators then DB.StatusIndicators = {} end
+        if not DB.StatusIndicators.Combat then DB.StatusIndicators.Combat = {} end
+        if not DB.StatusIndicators.Resting then DB.StatusIndicators.Resting = {} end
+        if not DB.LeaderIndicator then DB.LeaderIndicator = {} end
+        
+        return {
+            type = "group",
+            name = "Status Indicators",
+            order = 5,
+            args = {
+                combatHeader = {
+                    type = "header",
+                    name = "Combat Indicator",
+                    order = 10,
+                },
+                combatEnabled = {
+                    type = "toggle",
+                    name = "Enable Combat Indicator",
+                    desc = "Show combat indicator (sword icon) when in combat",
+                    order = 11,
+                    width = "full",
+                    get = function()
+                        return DB.StatusIndicators.Combat.Enabled ~= false
+                    end,
+                    set = function(_, val)
+                        DB.StatusIndicators.Combat.Enabled = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                combatSize = {
+                    type = "range",
+                    name = "Combat Indicator Size",
+                    desc = "Size of the combat indicator",
+                    order = 12,
+                    width = "full",
+                    min = 12, max = 64, step = 1,
+                    get = function()
+                        return DB.StatusIndicators.Combat.Size or 24
+                    end,
+                    set = function(_, val)
+                        DB.StatusIndicators.Combat.Size = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                combatAnchorFrom = {
+                    type = "select",
+                    name = "Combat Anchor From",
+                    desc = "Anchor point on the indicator",
+                    order = 13,
+                    width = "normal",
+                    values = AnchorPoints,
+                    get = function()
+                        return DB.StatusIndicators.Combat.AnchorFrom or "CENTER"
+                    end,
+                    set = function(_, val)
+                        DB.StatusIndicators.Combat.AnchorFrom = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                combatAnchorTo = {
+                    type = "select",
+                    name = "Combat Anchor To",
+                    desc = "Anchor point on the frame",
+                    order = 14,
+                    width = "normal",
+                    values = AnchorPoints,
+                    get = function()
+                        return DB.StatusIndicators.Combat.AnchorTo or "TOPLEFT"
+                    end,
+                    set = function(_, val)
+                        DB.StatusIndicators.Combat.AnchorTo = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                combatOffsetX = {
+                    type = "range",
+                    name = "Combat X Offset",
+                    desc = "Horizontal offset for combat indicator",
+                    order = 15,
+                    width = "normal",
+                    min = -200, max = 200, step = 1,
+                    get = function()
+                        return DB.StatusIndicators.Combat.OffsetX or 3
+                    end,
+                    set = function(_, val)
+                        DB.StatusIndicators.Combat.OffsetX = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                combatOffsetY = {
+                    type = "range",
+                    name = "Combat Y Offset",
+                    desc = "Vertical offset for combat indicator",
+                    order = 16,
+                    width = "normal",
+                    min = -200, max = 200, step = 1,
+                    get = function()
+                        return DB.StatusIndicators.Combat.OffsetY or -3
+                    end,
+                    set = function(_, val)
+                        DB.StatusIndicators.Combat.OffsetY = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                restingHeader = {
+                    type = "header",
+                    name = "Resting Indicator",
+                    order = 30,
+                },
+                restingEnabled = {
+                    type = "toggle",
+                    name = "Enable Resting Indicator",
+                    desc = "Show resting indicator (ZZZ icon) when resting",
+                    order = 31,
+                    width = "full",
+                    get = function()
+                        return DB.StatusIndicators.Resting.Enabled ~= false
+                    end,
+                    set = function(_, val)
+                        DB.StatusIndicators.Resting.Enabled = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                restingSize = {
+                    type = "range",
+                    name = "Resting Indicator Size",
+                    desc = "Size of the resting indicator",
+                    order = 32,
+                    width = "full",
+                    min = 12, max = 64, step = 1,
+                    get = function()
+                        return DB.StatusIndicators.Resting.Size or 24
+                    end,
+                    set = function(_, val)
+                        DB.StatusIndicators.Resting.Size = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                restingAnchorFrom = {
+                    type = "select",
+                    name = "Resting Anchor From",
+                    desc = "Anchor point on the indicator",
+                    order = 33,
+                    width = "normal",
+                    values = AnchorPoints,
+                    get = function()
+                        return DB.StatusIndicators.Resting.AnchorFrom or "CENTER"
+                    end,
+                    set = function(_, val)
+                        DB.StatusIndicators.Resting.AnchorFrom = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                restingAnchorTo = {
+                    type = "select",
+                    name = "Resting Anchor To",
+                    desc = "Anchor point on the frame",
+                    order = 34,
+                    width = "normal",
+                    values = AnchorPoints,
+                    get = function()
+                        return DB.StatusIndicators.Resting.AnchorTo or "TOPLEFT"
+                    end,
+                    set = function(_, val)
+                        DB.StatusIndicators.Resting.AnchorTo = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                restingOffsetX = {
+                    type = "range",
+                    name = "Resting X Offset",
+                    desc = "Horizontal offset for resting indicator",
+                    order = 35,
+                    width = "normal",
+                    min = -200, max = 200, step = 1,
+                    get = function()
+                        return DB.StatusIndicators.Resting.OffsetX or 3
+                    end,
+                    set = function(_, val)
+                        DB.StatusIndicators.Resting.OffsetX = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                restingOffsetY = {
+                    type = "range",
+                    name = "Resting Y Offset",
+                    desc = "Vertical offset for resting indicator",
+                    order = 36,
+                    width = "normal",
+                    min = -200, max = 200, step = 1,
+                    get = function()
+                        return DB.StatusIndicators.Resting.OffsetY or -3
+                    end,
+                    set = function(_, val)
+                        DB.StatusIndicators.Resting.OffsetY = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                leaderHeader = {
+                    type = "header",
+                    name = "Leader/Assistant Indicator",
+                    order = 50,
+                },
+                leaderEnabled = {
+                    type = "toggle",
+                    name = "Enable Leader Indicator",
+                    desc = "Show leader/assistant icon when unit is group leader or assistant",
+                    order = 51,
+                    width = "full",
+                    get = function()
+                        return DB.LeaderIndicator.Enabled ~= false
+                    end,
+                    set = function(_, val)
+                        DB.LeaderIndicator.Enabled = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                leaderSize = {
+                    type = "range",
+                    name = "Leader Indicator Size",
+                    desc = "Size of the leader indicator",
+                    order = 52,
+                    width = "full",
+                    min = 10, max = 40, step = 1,
+                    get = function()
+                        return DB.LeaderIndicator.Size or 15
+                    end,
+                    set = function(_, val)
+                        DB.LeaderIndicator.Size = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                leaderAnchorFrom = {
+                    type = "select",
+                    name = "Leader Anchor From",
+                    desc = "Anchor point on the indicator",
+                    order = 53,
+                    width = "normal",
+                    values = AnchorPoints,
+                    get = function()
+                        return DB.LeaderIndicator.AnchorFrom or "RIGHT"
+                    end,
+                    set = function(_, val)
+                        DB.LeaderIndicator.AnchorFrom = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                leaderAnchorTo = {
+                    type = "select",
+                    name = "Leader Anchor To",
+                    desc = "Anchor point on the frame",
+                    order = 54,
+                    width = "normal",
+                    values = AnchorPoints,
+                    get = function()
+                        return DB.LeaderIndicator.AnchorTo or "TOPRIGHT"
+                    end,
+                    set = function(_, val)
+                        DB.LeaderIndicator.AnchorTo = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                leaderOffsetX = {
+                    type = "range",
+                    name = "Leader X Offset",
+                    desc = "Horizontal offset for leader indicator",
+                    order = 55,
+                    width = "normal",
+                    min = -200, max = 200, step = 1,
+                    get = function()
+                        return DB.LeaderIndicator.OffsetX or -3
+                    end,
+                    set = function(_, val)
+                        DB.LeaderIndicator.OffsetX = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                leaderOffsetY = {
+                    type = "range",
+                    name = "Leader Y Offset",
+                    desc = "Vertical offset for leader indicator",
+                    order = 56,
+                    width = "normal",
+                    min = -200, max = 200, step = 1,
+                    get = function()
+                        return DB.LeaderIndicator.OffsetY or 0
+                    end,
+                    set = function(_, val)
+                        DB.LeaderIndicator.OffsetY = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+            },
+        }
+    end
+    
     -- Main unit frame group with tabs
     local tabs = {
         General = CreateGeneralTab(),
-        frame = CreateFrameTab(),
+        frame = (unit == "boss") and CreateBossFrameTab() or CreateFrameTab(),
         texts = CreateTextsTab(),
     }
     
@@ -1323,11 +2293,23 @@ local function CreateUnitFrameOptions(unit, displayName, order)
         tabs.absorbBar = CreateAbsorbBarTab()
     end
     
-    -- Add Auras tab for target frame
-    if unit == "target" then
-        tabs.auras = CreateAurasTab()
+    -- Add Buffs and Debuffs tabs for player, focus, and target frames
+    if unit == "player" or unit == "focus" or unit == "target" then
+        tabs.buffs = CreateBuffsTab()
+        tabs.debuffs = CreateDebuffsTab()
     end
     
+    -- Add Status Indicators tab for player frame only
+    if unit == "player" then
+        tabs.statusIndicators = CreateStatusIndicatorsTab()
+    end
+
+    -- Add boss-specific tabs
+    if unit == "boss" then
+        -- Positioning options are now in the Frame tab, no separate positioning tab needed
+        -- tabs.positioning = CreateBossPositioningTab()
+    end
+
     return {
         type = "group",
         name = displayName,
@@ -1632,6 +2614,75 @@ local function CreateUnitFrameOptionsGroup()
                         end,
                     },
                     
+                    mouseoverHeader = {
+                        type = "header",
+                        name = "Mouseover Highlight",
+                        order = 34,
+                    },
+                    mouseoverToggle = {
+                        type = "toggle",
+                        name = "Enable Mouseover Highlight",
+                        desc = "Show the custom mouseover glow on all NephUI unit frames",
+                        order = 35,
+                        width = "full",
+                        get = function()
+                            local db = NephUI.db.profile.unitFrames
+                            local settings = db and db.General and db.General.MouseoverHighlight
+                            if settings == nil then return true end
+                            return settings.Enabled ~= false
+                        end,
+                        set = function(_, val)
+                            local db = NephUI.db.profile.unitFrames
+                            if not db then
+                                NephUI.db.profile.unitFrames = {}
+                                db = NephUI.db.profile.unitFrames
+                            end
+                            if not db.General then db.General = {} end
+                            if not db.General.MouseoverHighlight then
+                                db.General.MouseoverHighlight = {Enabled = true, Alpha = 0.5}
+                            end
+                            db.General.MouseoverHighlight.Enabled = val
+                            if NephUI.UnitFrames then
+                                NephUI.UnitFrames:RefreshFrames()
+                            end
+                        end,
+                    },
+                    mouseoverAlpha = {
+                        type = "range",
+                        name = "Mouseover Highlight Alpha",
+                        desc = "Adjust the opacity of the mouseover glow for all unit frames",
+                        order = 36,
+                        width = "full",
+                        min = 0,
+                        max = 1,
+                        step = 0.05,
+                        disabled = function()
+                            local db = NephUI.db.profile.unitFrames
+                            local settings = db and db.General and db.General.MouseoverHighlight
+                            return settings and settings.Enabled == false
+                        end,
+                        get = function()
+                            local db = NephUI.db.profile.unitFrames
+                            local settings = db and db.General and db.General.MouseoverHighlight
+                            return (settings and settings.Alpha) or 0.5
+                        end,
+                        set = function(_, val)
+                            local db = NephUI.db.profile.unitFrames
+                            if not db then
+                                NephUI.db.profile.unitFrames = {}
+                                db = NephUI.db.profile.unitFrames
+                            end
+                            if not db.General then db.General = {} end
+                            if not db.General.MouseoverHighlight then
+                                db.General.MouseoverHighlight = {Enabled = true, Alpha = 0.5}
+                            end
+                            db.General.MouseoverHighlight.Alpha = val
+                            if NephUI.UnitFrames then
+                                NephUI.UnitFrames:RefreshFrames()
+                            end
+                        end,
+                    },
+                    
                     -- Custom Colors Section
                     customColorsHeader = {
                         type = "header",
@@ -1743,15 +2794,165 @@ local function CreateUnitFrameOptionsGroup()
                             end
                         end,
                     },
+                    focusColor = {
+                        type = "color",
+                        name = "Focus",
+                        order = 46,
+                        width = "normal",
+                        hasAlpha = false,
+                        get = function()
+                            local db = NephUI.db.profile.unitFrames
+                            if not db or not db.General or not db.General.CustomColors or not db.General.CustomColors.Power then
+                                return 1, 0.5, 0.25
+                            end
+                            local c = db.General.CustomColors.Power[2] or {1, 0.5, 0.25}
+                            return c[1], c[2], c[3]
+                        end,
+                        set = function(_, r, g, b)
+                            local db = NephUI.db.profile.unitFrames
+                            if not db.General then db.General = {} end
+                            if not db.General.CustomColors then db.General.CustomColors = {} end
+                            if not db.General.CustomColors.Power then db.General.CustomColors.Power = {} end
+                            db.General.CustomColors.Power[2] = {r, g, b}
+                            if NephUI.UnitFrames then
+                                NephUI.UnitFrames:RefreshFrames()
+                            end
+                        end,
+                    },
+                    astralPowerColor = {
+                        type = "color",
+                        name = "Astral Power",
+                        order = 47,
+                        width = "normal",
+                        hasAlpha = false,
+                        get = function()
+                            local db = NephUI.db.profile.unitFrames
+                            if not db or not db.General or not db.General.CustomColors or not db.General.CustomColors.Power then
+                                return 0.3, 0.52, 0.9
+                            end
+                            local c = db.General.CustomColors.Power[8] or {0.3, 0.52, 0.9}
+                            return c[1], c[2], c[3]
+                        end,
+                        set = function(_, r, g, b)
+                            local db = NephUI.db.profile.unitFrames
+                            if not db.General then db.General = {} end
+                            if not db.General.CustomColors then db.General.CustomColors = {} end
+                            if not db.General.CustomColors.Power then db.General.CustomColors.Power = {} end
+                            db.General.CustomColors.Power[8] = {r, g, b}
+                            if NephUI.UnitFrames then
+                                NephUI.UnitFrames:RefreshFrames()
+                            end
+                        end,
+                    },
+                    maelstromColor = {
+                        type = "color",
+                        name = "Maelstrom",
+                        order = 48,
+                        width = "normal",
+                        hasAlpha = false,
+                        get = function()
+                            local db = NephUI.db.profile.unitFrames
+                            if not db or not db.General or not db.General.CustomColors or not db.General.CustomColors.Power then
+                                return 0, 0.5, 1
+                            end
+                            local c = db.General.CustomColors.Power[11] or {0, 0.5, 1}
+                            return c[1], c[2], c[3]
+                        end,
+                        set = function(_, r, g, b)
+                            local db = NephUI.db.profile.unitFrames
+                            if not db.General then db.General = {} end
+                            if not db.General.CustomColors then db.General.CustomColors = {} end
+                            if not db.General.CustomColors.Power then db.General.CustomColors.Power = {} end
+                            db.General.CustomColors.Power[11] = {r, g, b}
+                            if NephUI.UnitFrames then
+                                NephUI.UnitFrames:RefreshFrames()
+                            end
+                        end,
+                    },
+                    insanityColor = {
+                        type = "color",
+                        name = "Insanity",
+                        order = 49,
+                        width = "normal",
+                        hasAlpha = false,
+                        get = function()
+                            local db = NephUI.db.profile.unitFrames
+                            if not db or not db.General or not db.General.CustomColors or not db.General.CustomColors.Power then
+                                return 0.4, 0, 0.8
+                            end
+                            local c = db.General.CustomColors.Power[13] or {0.4, 0, 0.8}
+                            return c[1], c[2], c[3]
+                        end,
+                        set = function(_, r, g, b)
+                            local db = NephUI.db.profile.unitFrames
+                            if not db.General then db.General = {} end
+                            if not db.General.CustomColors then db.General.CustomColors = {} end
+                            if not db.General.CustomColors.Power then db.General.CustomColors.Power = {} end
+                            db.General.CustomColors.Power[13] = {r, g, b}
+                            if NephUI.UnitFrames then
+                                NephUI.UnitFrames:RefreshFrames()
+                            end
+                        end,
+                    },
+                    furyColor = {
+                        type = "color",
+                        name = "Fury",
+                        order = 50,
+                        width = "normal",
+                        hasAlpha = false,
+                        get = function()
+                            local db = NephUI.db.profile.unitFrames
+                            if not db or not db.General or not db.General.CustomColors or not db.General.CustomColors.Power then
+                                return 0.79, 0.26, 0.99
+                            end
+                            local c = db.General.CustomColors.Power[17] or {0.79, 0.26, 0.99}
+                            return c[1], c[2], c[3]
+                        end,
+                        set = function(_, r, g, b)
+                            local db = NephUI.db.profile.unitFrames
+                            if not db.General then db.General = {} end
+                            if not db.General.CustomColors then db.General.CustomColors = {} end
+                            if not db.General.CustomColors.Power then db.General.CustomColors.Power = {} end
+                            db.General.CustomColors.Power[17] = {r, g, b}
+                            if NephUI.UnitFrames then
+                                NephUI.UnitFrames:RefreshFrames()
+                            end
+                        end,
+                    },
+                    painColor = {
+                        type = "color",
+                        name = "Pain",
+                        order = 51,
+                        width = "normal",
+                        hasAlpha = false,
+                        get = function()
+                            local db = NephUI.db.profile.unitFrames
+                            if not db or not db.General or not db.General.CustomColors or not db.General.CustomColors.Power then
+                                return 1, 0.61, 0
+                            end
+                            local c = db.General.CustomColors.Power[18] or {1, 0.61, 0}
+                            return c[1], c[2], c[3]
+                        end,
+                        set = function(_, r, g, b)
+                            local db = NephUI.db.profile.unitFrames
+                            if not db.General then db.General = {} end
+                            if not db.General.CustomColors then db.General.CustomColors = {} end
+                            if not db.General.CustomColors.Power then db.General.CustomColors.Power = {} end
+                            db.General.CustomColors.Power[18] = {r, g, b}
+                            if NephUI.UnitFrames then
+                                NephUI.UnitFrames:RefreshFrames()
+                            end
+                        end,
+                    },
                     reactionColorsHeader = {
                         type = "header",
                         name = "Reaction Colors",
-                        order = 50,
+                        order = 55,
                     },
                     hostileColor = {
                         type = "color",
                         name = "Hostile",
-                        order = 51,
+                        order = 56,
                         width = "normal",
                         hasAlpha = false,
                         get = function()
@@ -1776,7 +2977,7 @@ local function CreateUnitFrameOptionsGroup()
                     neutralColor = {
                         type = "color",
                         name = "Neutral",
-                        order = 52,
+                        order = 57,
                         width = "normal",
                         hasAlpha = false,
                         get = function()
@@ -1801,7 +3002,7 @@ local function CreateUnitFrameOptionsGroup()
                     friendlyColor = {
                         type = "color",
                         name = "Friendly",
-                        order = 53,
+                        order = 58,
                         width = "normal",
                         hasAlpha = false,
                         get = function()

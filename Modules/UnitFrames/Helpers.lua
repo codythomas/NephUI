@@ -228,6 +228,74 @@ local function MakePlayerFrameClickthrough()
     end
 end
 
+local MOUSEOVER_HIGHLIGHT_TEXTURE = "Interface\\AddOns\\NephUI\\Media\\uf_mouseover.tga"
+
+local function GetMouseoverHighlightSettings()
+    local profile = NephUI.db and NephUI.db.profile and NephUI.db.profile.unitFrames
+    if not profile or profile.enabled == false then
+        return nil
+    end
+    local general = profile.General
+    local globalSettings = general and general.MouseoverHighlight
+    if not globalSettings or globalSettings.Enabled == false then
+        return nil
+    end
+
+    local alpha = globalSettings.Alpha or 0.5
+    if type(alpha) ~= "number" then
+        alpha = 0.5
+    end
+    alpha = math.min(1, math.max(0, alpha))
+
+    return {
+        alpha = alpha,
+    }
+end
+
+local function EnsureMouseoverHighlightTexture(frame)
+    if not frame then return nil end
+    -- Parent to the health bar so the glow stays above the fill but within the border
+    local parent = frame.healthBar or frame
+    local highlight = frame.mouseoverHighlight
+    if not highlight then
+        highlight = parent:CreateTexture(nil, "OVERLAY")
+        frame.mouseoverHighlight = highlight
+    elseif highlight:GetParent() ~= parent then
+        highlight:SetParent(parent)
+    end
+
+    highlight:ClearAllPoints()
+    highlight:SetAllPoints(parent)
+    highlight:SetTexture(MOUSEOVER_HIGHLIGHT_TEXTURE)
+    highlight:SetDrawLayer("OVERLAY", 1)
+    return highlight
+end
+
+local function UpdateMouseoverHighlight(frame)
+    if not frame then return end
+    local settings = GetMouseoverHighlightSettings()
+    if not settings then
+        if frame.mouseoverHighlight then
+            frame.mouseoverHighlight:Hide()
+        end
+        frame.__nuiUFMouseoverEnabled = false
+        frame.__nuiUFMouseoverActive = false
+        return
+    end
+
+    local highlight = EnsureMouseoverHighlightTexture(frame)
+    if not highlight then return end
+    highlight:SetAlpha(settings.alpha or 0.5)
+    frame.__nuiUFMouseoverEnabled = true
+    highlight:SetShown(frame.__nuiUFMouseoverActive == true)
+end
+
+local function SetMouseoverHighlightState(frame, entering)
+    if not frame then return end
+    frame.__nuiUFMouseoverActive = entering == true
+    UpdateMouseoverHighlight(frame)
+end
+
 -- Power bar color table (for target/focus)
 local PowerBarColor = {
     [Enum.PowerType.Mana] = { r = 0.0, g = 0.5, b = 1.0 },
@@ -259,4 +327,5 @@ UF.MaskFrame = MaskFrame
 UF.SafeDisableMouse = SafeDisableMouse
 UF.PowerBarColor = PowerBarColor
 UF.MakePlayerFrameClickthrough = MakePlayerFrameClickthrough
-
+UF.UpdateMouseoverHighlight = UpdateMouseoverHighlight
+UF.SetMouseoverHighlightState = SetMouseoverHighlightState

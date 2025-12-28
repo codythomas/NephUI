@@ -20,6 +20,68 @@ ActionBarGlow.LibCustomGlowTypes = {
     "Proc Glow",
 }
 
+-- Try to find the icon texture attached to the button
+local function GetButtonIconTexture(button)
+    if not button then return nil end
+
+    local icon = button.icon or button.Icon or button.IconTexture
+    if icon and icon.GetObjectType and icon:GetObjectType() == "Texture" then
+        return icon
+    end
+
+    local buttonName = button.GetName and button:GetName()
+    if buttonName then
+        local namedIcon = _G[buttonName .. "Icon"] or _G[buttonName .. "IconTexture"]
+        if namedIcon then
+            return namedIcon
+        end
+    end
+
+    if button.GetRegions then
+        for _, region in ipairs({button:GetRegions()}) do
+            if region and region.GetObjectType and region:GetObjectType() == "Texture" then
+                local regionName = region:GetName()
+                if not regionName or regionName:find("Icon") then
+                    return region
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+local function AnchorGlowFrameToIcon(button, glowFrame, xOffset, yOffset)
+    if not glowFrame then return end
+    local icon = GetButtonIconTexture(button)
+    local target = icon or button
+    xOffset = xOffset or 0
+    yOffset = yOffset or 0
+
+    glowFrame:ClearAllPoints()
+    glowFrame:SetPoint("TOPLEFT", target, "TOPLEFT", -xOffset, yOffset)
+    glowFrame:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", xOffset, -yOffset)
+end
+
+local function AnchorOverlayGlowToIcon(button, xOffset, yOffset)
+    if not button then return end
+    local overlay = button.__LBGoverlay
+    if not overlay then return end
+
+    local icon = GetButtonIconTexture(button)
+    local target = icon or button
+    local targetWidth = (target and target.GetWidth and target:GetWidth()) or (button.GetWidth and button:GetWidth()) or 0
+    local targetHeight = (target and target.GetHeight and target:GetHeight()) or (button.GetHeight and button:GetHeight()) or 0
+
+    xOffset = xOffset or 0
+    yOffset = yOffset or 0
+
+    overlay:ClearAllPoints()
+    overlay:SetSize(targetWidth * 1.4, targetHeight * 1.4)
+    overlay:SetPoint("TOPLEFT", target, "TOPLEFT", -(targetWidth * 0.2 + xOffset), targetHeight * 0.2 + yOffset)
+    overlay:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", targetWidth * 0.2 + xOffset, -(targetHeight * 0.2 + yOffset))
+end
+
 -- Check if button is an action bar button
 local function IsActionBarButton(button)
     if not button then return false end
@@ -105,8 +167,6 @@ local function ApplyLibCustomGlow(button, settings, spellID)
     local lines = settings.lcgLines or 14
     local frequency = settings.lcgFrequency or 0.25
     local thickness = settings.lcgThickness or 2
-    local xOffset = settings.lcgXOffset or -7
-    local yOffset = settings.lcgYOffset or -7
     local glowKey = "_NephUIActionBarGlow"
     
     -- Stop any existing glow first
@@ -118,29 +178,29 @@ local function ApplyLibCustomGlow(button, settings, spellID)
     if glowType == "Pixel Glow" then
         LCG.PixelGlow_Start(button, color, lines, frequency, nil, thickness, 0, 0, true, glowKey)
         local glowFrame = button["_PixelGlow" .. glowKey]
-        if glowFrame then
-            glowFrame:ClearAllPoints()
-            glowFrame:SetPoint("TOPLEFT", button, "TOPLEFT", -xOffset, xOffset)
-            glowFrame:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", xOffset, -xOffset)
-        end
+        AnchorGlowFrameToIcon(button, glowFrame, 0, 0)
     elseif glowType == "Autocast Shine" then
         LCG.AutoCastGlow_Start(button, color, lines, frequency, 1, 0, 0, glowKey)
         local glowFrame = button["_AutoCastGlow" .. glowKey]
-        if glowFrame then
-            glowFrame:ClearAllPoints()
-            glowFrame:SetPoint("TOPLEFT", button, "TOPLEFT", -xOffset, xOffset)
-            glowFrame:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", xOffset, -xOffset)
-        end
+        AnchorGlowFrameToIcon(button, glowFrame, 0, 0)
     elseif glowType == "Action Button Glow" then
         LCG.ButtonGlow_Start(button, color, frequency)
+        AnchorOverlayGlowToIcon(button, 0, 0)
+        if button.__LBGoverlay == nil then
+            C_Timer.After(0, function()
+                AnchorOverlayGlowToIcon(button, 0, 0)
+            end)
+        end
     elseif glowType == "Proc Glow" then
         LCG.ProcGlow_Start(button, {
             color = color,
             startAnim = true,
-            xOffset = xOffset,
-            yOffset = yOffset,
+            xOffset = 0,
+            yOffset = 0,
             key = glowKey
         })
+        local glowFrame = button["_ProcGlow" .. glowKey]
+        AnchorGlowFrameToIcon(button, glowFrame, 0, 0)
     end
     
     activeGlowIcons[button] = spellID

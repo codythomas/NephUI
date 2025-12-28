@@ -1,18 +1,19 @@
 local ADDON_NAME, ns = ...
 local NephUI = ns.Addon
 local THEME = {
-    -- Slightly brighter slate palette for higher contrast
+
     primary = {0.120, 0.620, 0.780},
     primaryHover = {0.160, 0.700, 0.860},
     primaryActive = {0.210, 0.780, 0.940},
-    bgDark = {0.060, 0.070, 0.090},
-    bgMedium = {0.090, 0.105, 0.130},
-    bgLight = {0.135, 0.150, 0.190},
+    bgDark = {0.085, 0.095, 0.120},
+    bgMedium = {0.115, 0.130, 0.155},
+    bgLight = {0.165, 0.180, 0.220},
+    input = {0.02, 0.02, 0.02, 0.95},
     border = {0.080, 0.080, 0.090, 0.95},
     borderLight = {0.280, 0.280, 0.320, 0.9},
     text = {0.96, 0.96, 0.98},
     textDim = {0.72, 0.72, 0.78},
-    gold = {0.96, 0.96, 0.98}, -- legacy name, reused for neutral text
+    gold = {0.96, 0.96, 0.98},
     accent = {0.160, 0.700, 0.860},
 }
 
@@ -347,7 +348,7 @@ function Widgets.CreateRange(parent, option, yOffset, optionsTable)
     valueEditBox:SetTextColor(1, 1, 1, 1)
     valueEditBox:SetAutoFocus(false)
     valueEditBox:SetJustifyH("CENTER")
-    CreateBackdrop(valueEditBox, THEME.bgDark, THEME.border)
+    CreateBackdrop(valueEditBox, THEME.input, THEME.border)
 
     valueEditBox:EnableKeyboard(false)
 
@@ -868,39 +869,43 @@ function Widgets.CreateInput(parent, option, yOffset, optionsTable)
     label:SetText(name)
     label:SetTextColor(THEME.text[1], THEME.text[2], THEME.text[3], 0.95)
 
-    if isMultiline then
+        if isMultiline then
         local scrollFrame = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
         scrollFrame:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -5)
         scrollFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -20, 0)
-        
+
         local editBox = CreateFrame("EditBox", nil, scrollFrame, "BackdropTemplate")
         editBox:SetMultiLine(true)
         StyleEditBox(editBox, "GameFontNormal")
         editBox:SetTextColor(THEME.text[1], THEME.text[2], THEME.text[3], 1)
         editBox:SetWidth(scrollFrame:GetWidth() - 20)
         editBox:SetHeight(120)
-        CreateBackdrop(editBox, THEME.bgDark, THEME.border)
+        CreateBackdrop(editBox, THEME.input, THEME.border)
         editBox:SetTextInsets(15, 15, 10, 10)
-        
+
         scrollFrame:SetScrollChild(editBox)
-        
+
         editBox:EnableKeyboard(false)
-        
+
         if option.get then
             local text = ResolveGetSet(option.get, optionsTable, option) or ""
             editBox:SetText(text)
             editBox:SetCursorPosition(0)
             editBox:ClearFocus()
         end
-        
+
         editBox:SetScript("OnEditFocusGained", function(self)
             self:EnableKeyboard(true)
             self:SetCursorPosition(string.len(self:GetText()))
+            -- Add visual feedback for focus
+            CreateBackdrop(self, THEME.input, THEME.accent)
         end)
-        
+
         editBox:SetScript("OnEditFocusLost", function(self)
             self:EnableKeyboard(false)
             self:ClearFocus()
+            -- Remove visual feedback for focus
+            CreateBackdrop(self, THEME.input, THEME.border)
         end)
         
         editBox:SetScript("OnEnter", function(self)
@@ -927,7 +932,7 @@ function Widgets.CreateInput(parent, option, yOffset, optionsTable)
         editBox:SetWidth(200)
         StyleEditBox(editBox, "GameFontNormal")
         editBox:SetTextColor(THEME.text[1], THEME.text[2], THEME.text[3], 1)
-        CreateBackdrop(editBox, THEME.bgDark, THEME.border)
+        CreateBackdrop(editBox, THEME.input, THEME.border)
         
         editBox:EnableKeyboard(false)
         
@@ -940,16 +945,20 @@ function Widgets.CreateInput(parent, option, yOffset, optionsTable)
         editBox:SetScript("OnEditFocusGained", function(self)
             self:EnableKeyboard(true)
             self:SetCursorPosition(string.len(self:GetText()))
+            -- Add visual feedback for focus
+            CreateBackdrop(self, THEME.input, THEME.accent)
         end)
-        
+
         editBox:SetScript("OnEditFocusLost", function(self)
             self:EnableKeyboard(false)
             self:ClearFocus()
+            -- Remove visual feedback for focus
+            CreateBackdrop(self, THEME.input, THEME.border)
         end)
-        
+
         editBox:SetScript("OnEnter", function(self)
         end)
-        
+
         editBox:SetScript("OnTextChanged", function(self, userInput)
             if userInput and option.set then
                 ResolveGetSet(option.set, optionsTable, option, self:GetText())
@@ -1158,7 +1167,7 @@ local function RenderOptions(contentFrame, options, path, parentFrame)
         -- Create sub tab container as child of contentArea (not scrollChild) so it stays fixed
         local subTabContainer = CreateFrame("Frame", nil, parentContentArea or contentFrame, "BackdropTemplate")
         subTabContainer:SetHeight(35)
-        subTabContainer:SetFrameStrata("DIALOG")
+        subTabContainer:SetFrameStrata("HIGH")
         subTabContainer:SetFrameLevel((parentScrollFrame and parentScrollFrame:GetFrameLevel() or 1) + 10)
         
         -- Add background to make it look good when sticky
@@ -1323,6 +1332,15 @@ local function RenderOptions(contentFrame, options, path, parentFrame)
             elseif option.type == "execute" then
                 widget = Widgets.CreateExecute(contentFrame, option, yOffset)
                 widgetHeight = 32
+            elseif option.type == "dynamicIcons" then
+                if NephUI and NephUI.CustomIcons and NephUI.CustomIcons.BuildDynamicIconsUI then
+                    local dynFrame = CreateFrame("Frame", nil, contentFrame, "BackdropTemplate")
+                    dynFrame:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", 0, -yOffset)
+                    dynFrame:SetPoint("BOTTOMRIGHT", contentFrame, "BOTTOMRIGHT", 0, 0)
+                    NephUI.CustomIcons:BuildDynamicIconsUI(dynFrame)
+                    widget = dynFrame
+                    widgetHeight = dynFrame:GetHeight() or 400
+                end
             elseif option.type == "input" then
                 widget = Widgets.CreateInput(contentFrame, option, yOffset, options)
                 widgetHeight = option.multiline and 150 or 35
@@ -1538,9 +1556,9 @@ function NephUI:CreateConfigFrame()
     
     -- Main frame
     local frame = CreateFrame("Frame", "NephUI_ConfigFrame", UIParent, "BackdropTemplate")
-    frame:SetSize(900, 650)  -- Slightly wider to accommodate sidebar
+    frame:SetSize(950, 750)  -- Slightly wider to accommodate sidebar
     frame:SetPoint("CENTER")
-    frame:SetFrameStrata("DIALOG")
+    frame:SetFrameStrata("HIGH")
     frame:SetMovable(true)
     frame:EnableMouse(true)
     frame:RegisterForDrag("LeftButton")
@@ -1623,7 +1641,7 @@ function NephUI:CreateConfigFrame()
     centerLine:SetPoint("TOP", UIParent, "TOP", 0, 0)
     centerLine:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 0)
     centerLine:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-    centerLine:SetFrameStrata("TOOLTIP")
+    centerLine:SetFrameStrata("HIGH")
     centerLine:SetFrameLevel(1000)
     centerLine:Hide()
     
@@ -1669,11 +1687,13 @@ function NephUI:CreateConfigFrame()
         db.General.ShowEditModeAnchors = false
         if NephUI.UnitFrames then
             NephUI.UnitFrames:UpdateEditModeAnchors()
+            -- Also hide boss frame preview mode
+            NephUI.UnitFrames:HideBossFramesPreview()
         end
-        
+
         -- Hide center line
         NephUI.UpdateCenterLine()
-        
+
         print("|cff00ff00[NephUI] Unit frame anchors disabled|r")
     end, "Hide draggable anchors for unit frames")
     disableAnchorsBtn:SetPoint("RIGHT", closeBtn, "LEFT", -5, 0)
@@ -1692,11 +1712,13 @@ function NephUI:CreateConfigFrame()
         db.General.ShowEditModeAnchors = true
         if NephUI.UnitFrames then
             NephUI.UnitFrames:UpdateEditModeAnchors()
+            -- Also show boss frame preview mode
+            NephUI.UnitFrames:ShowBossFramesPreview()
         end
-        
+
         -- Show center line
         NephUI.UpdateCenterLine()
-        
+
         print("|cff00ff00[NephUI] All anchors enabled|r")
     end, "Show draggable anchors for unit frames and action bars (works independently of Edit Mode)")
     enableAnchorsBtn:SetPoint("RIGHT", disableAnchorsBtn, "LEFT", -5, 0)

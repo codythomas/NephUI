@@ -14,13 +14,6 @@ function AutoUIScale:SetUIScale(scale)
 end
 
 function AutoUIScale:ApplySavedScale()
-    -- Check if UI scale is enabled via CVar
-    local useUiScale = GetCVar("useUiScale")
-    if useUiScale ~= "1" and useUiScale ~= "true" then
-        -- UI scale is disabled, don't apply saved scale
-        return
-    end
-    
     -- Check if we have a saved UI scale value
     -- If the user has previously set a UI scale (via confirm button or preset buttons), apply it
     -- If no saved value exists (first load), do nothing - preserve their current UI scale

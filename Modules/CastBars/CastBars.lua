@@ -5,6 +5,10 @@ local NephUI = ns.Addon
 NephUI.CastBars = NephUI.CastBars or {}
 local CastBars = NephUI.CastBars
 
+-- Build helpers so we can branch between Midnight (>=120000) and retail (TWW)
+local BUILD_NUMBER = tonumber((select(4, GetBuildInfo()))) or 0
+local IS_MIDNIGHT_OR_LATER = BUILD_NUMBER >= 120000
+
 -- Utility functions (from Main.lua)
 local function GetClassColor()
     local classColor = RAID_CLASS_COLORS[select(2, UnitClass("player"))]
@@ -18,12 +22,13 @@ local function CreateBorder(frame)
     if frame.border then return frame.border end
 
     local bord = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-    local borderOffset = NephUI:Scale(1)
-    bord:SetPoint("TOPLEFT", frame, -borderOffset, borderOffset)
-    bord:SetPoint("BOTTOMRIGHT", frame, borderOffset, -borderOffset)
+	local borderSize = (NephUI.ScaleBorder and NephUI:ScaleBorder(1)) or math.floor((NephUI:Scale(1) or 1) + 0.5)
+	local borderOffset = borderSize
+	bord:SetPoint("TOPLEFT", frame, -borderOffset, borderOffset)
+	bord:SetPoint("BOTTOMRIGHT", frame, borderOffset, -borderOffset)
     bord:SetBackdrop({
         edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
+		edgeSize = borderSize,
     })
     bord:SetBackdropBorderColor(0, 0, 0, 1)
     bord:SetFrameLevel(frame:GetFrameLevel() + 1)
@@ -35,6 +40,59 @@ end
 -- Export utilities
 CastBars.GetClassColor = GetClassColor
 CastBars.CreateBorder = CreateBorder
+CastBars.BUILD_NUMBER = BUILD_NUMBER
+CastBars.IS_MIDNIGHT_OR_LATER = IS_MIDNIGHT_OR_LATER
+
+-- Resolve a cast icon texture across client variants
+local function ResolveCastIconTexture(spellbar, unit, spellID)
+    -- Midnight+ uses the new spell texture pipeline
+    if IS_MIDNIGHT_OR_LATER then
+        if spellID and C_Spell and C_Spell.GetSpellTexture then
+            local tex = C_Spell.GetSpellTexture(spellID)
+            if tex then
+                return tex
+            end
+        end
+        return 136243 -- fallback book icon
+    end
+
+    -- Retail (TWW) fallback path
+    local texture
+
+    -- First try the Blizzard spellbar's existing icon texture
+    if spellbar then
+        local icon = spellbar.Icon or spellbar.icon
+        if icon and icon.GetTexture then
+            texture = icon:GetTexture()
+        end
+    end
+
+    -- Then try spell-based lookups
+    if not texture and spellID then
+        if GetSpellTexture then
+            texture = GetSpellTexture(spellID)
+        end
+        if not texture and C_Spell and C_Spell.GetSpellTexture then
+            texture = C_Spell.GetSpellTexture(spellID)
+        end
+    end
+
+    -- Finally ask the unit APIs
+    if not texture and unit then
+        if UnitCastingInfo then
+            local _, _, tex = UnitCastingInfo(unit)
+            texture = texture or tex
+        end
+        if not texture and UnitChannelInfo then
+            local _, _, tex = UnitChannelInfo(unit)
+            texture = texture or tex
+        end
+    end
+
+    return texture or 136243
+end
+
+CastBars.ResolveCastIconTexture = ResolveCastIconTexture
 
 -- CastBar OnUpdate function
 local function CastBar_OnUpdate(frame, elapsed)
@@ -83,12 +141,25 @@ local function CastBar_OnUpdate(frame, elapsed)
             cfg = NephUI.db.profile.targetCastBar
         elseif frame == NephUI.focusCastBar then
             cfg = NephUI.db.profile.focusCastBar
+        elseif NephUI.bossCastBars then
+            -- Check if this is a boss cast bar
+            for _, bossBar in pairs(NephUI.bossCastBars) do
+                if frame == bossBar then
+                    cfg = NephUI.db.profile.bossCastBar
+                    break
+                end
+            end
         end
         
         -- Show/hide time text based on setting
         if cfg and cfg.showTimeText ~= false then
             frame.timeText:Show()
-            frame.timeText:SetFormattedText("%.1f", remaining)
+            -- Boss cast bars show current/max format, others show remaining time
+            if cfg == NephUI.db.profile.bossCastBar then
+                frame.timeText:SetFormattedText("%.1f/%.1f", progress, duration)
+            else
+                frame.timeText:SetFormattedText("%.1f", remaining)
+            end
         else
             frame.timeText:Hide()
         end

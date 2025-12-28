@@ -57,16 +57,28 @@ local function UpdateUnitFramePowerBar(self, event, eventUnit, ...)
     -- Check if values are numbers before comparing (secret values aren't numbers)
     local powerIsValid = type(unitPower) == "number"
     local maxPowerIsValid = type(unitMaxPower) == "number"
-    
+
     -- If we have secret values, use safe defaults and skip the update
     if not powerIsValid or not maxPowerIsValid then
         -- Can't safely update in combat with secret values, just show the bar with last known state
         self:Show()
         return
     end
-    
+
     -- Handle case where maxPower is 0 (no power type or dead unit)
-    if unitMaxPower <= 0 then
+    -- Use pcall to safely check comparison since secret values pass type check but can't be compared
+    local maxPowerIsZero = false
+    if maxPowerIsValid then
+        local success, result = pcall(function() return unitMaxPower <= 0 end)
+        if success then
+            maxPowerIsZero = result
+        else
+            -- If comparison fails (secret value), assume it's not zero to avoid errors
+            maxPowerIsZero = false
+        end
+    end
+
+    if maxPowerIsZero then
         -- Still show the bar but with 0 values
         self:SetMinMaxValues(0, 1)
         self:SetValue(0)
@@ -367,6 +379,14 @@ function UF:HookTargetAndFocusPowerBars()
                 if not customTargetPowerBar then return end
                 SyncTargetPowerBar()
             end)
+
+            -- Hook OnMinMaxChanged to sync when min/max values change
+            if targetPowerBar:GetScript("OnMinMaxChanged") == nil then
+                targetPowerBar:HookScript("OnMinMaxChanged", function(self)
+                    if not customTargetPowerBar then return end
+                    SyncTargetPowerBar()
+                end)
+            end
             
             -- Hook OnShow to sync when Blizzard's bar shows
             targetPowerBar:HookScript("OnShow", function(self)
@@ -382,11 +402,7 @@ function UF:HookTargetAndFocusPowerBars()
                 end
             end)
             
-            -- Hook OnUpdate to continuously sync values
-            targetPowerBar:HookScript("OnUpdate", function(self, elapsed)
-                if not customTargetPowerBar or not targetPowerBar:IsShown() then return end
-                SyncTargetPowerBar()
-            end)
+            -- Removed OnUpdate hook - OnValueChanged should be sufficient for syncing
             
             -- Initial sync if Blizzard's bar is already shown
             if targetPowerBar:IsShown() then
@@ -447,6 +463,14 @@ function UF:HookTargetAndFocusPowerBars()
                 if not customFocusPowerBar then return end
                 SyncFocusPowerBar()
             end)
+
+            -- Hook OnMinMaxChanged to sync when min/max values change
+            if focusPowerBar:GetScript("OnMinMaxChanged") == nil then
+                focusPowerBar:HookScript("OnMinMaxChanged", function(self)
+                    if not customFocusPowerBar then return end
+                    SyncFocusPowerBar()
+                end)
+            end
             
             -- Hook OnShow to sync when Blizzard's bar shows
             focusPowerBar:HookScript("OnShow", function(self)
@@ -462,11 +486,7 @@ function UF:HookTargetAndFocusPowerBars()
                 end
             end)
             
-            -- Hook OnUpdate to continuously sync values
-            focusPowerBar:HookScript("OnUpdate", function(self, elapsed)
-                if not customFocusPowerBar or not focusPowerBar:IsShown() then return end
-                SyncFocusPowerBar()
-            end)
+            -- Removed OnUpdate hook - OnValueChanged should be sufficient for syncing
             
             -- Initial sync if Blizzard's bar is already shown
             if focusPowerBar:IsShown() then

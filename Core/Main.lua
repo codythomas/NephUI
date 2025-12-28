@@ -13,6 +13,147 @@ local LibDeflate    = LibStub("LibDeflate", true)
 local AceDBOptions = LibStub("AceDBOptions-3.0", true)
 local LibDualSpec   = LibStub("LibDualSpec-1.0", true)
 
+local WHITE8 = "Interface\\Buttons\\WHITE8X8"
+
+local SELECTION_ALPHA = 0.5
+local SelectionRegionKeys = {
+    "Center",
+    "MouseOverHighlight",
+    "TopEdge",
+    "BottomEdge",
+    "LeftEdge",
+    "RightEdge",
+    "TopLeft",
+    "TopRight",
+    "BottomLeft",
+    "BottomRight",
+    "Left",
+    "Right",
+    "Top",
+    "Bottom",
+}
+
+local function ApplyAlphaToRegion(region)
+    if not region or not region.SetAlpha then
+        return
+    end
+
+    region:SetAlpha(SELECTION_ALPHA)
+    if region.HookScript and not region.__nephuiSelectionAlphaHooked then
+        region.__nephuiSelectionAlphaHooked = true
+        region:HookScript("OnShow", function(self)
+            self:SetAlpha(SELECTION_ALPHA)
+        end)
+    end
+end
+
+local function ForceSelectionAlpha(selection)
+    if not selection or not selection.SetAlpha then
+        return
+    end
+
+    selection.__nephuiSelectionAlphaLock = true
+    selection:SetAlpha(SELECTION_ALPHA)
+    selection.__nephuiSelectionAlphaLock = nil
+end
+
+function NephUI:ApplySelectionAlpha(selection)
+    if not selection then
+        return
+    end
+
+    ForceSelectionAlpha(selection)
+
+    if selection.HookScript and not selection.__nephuiSelectionOnShowHooked then
+        selection.__nephuiSelectionOnShowHooked = true
+        selection:HookScript("OnShow", function(self)
+            NephUI:ApplySelectionAlpha(self)
+        end)
+    end
+
+    if selection.SetAlpha and not selection.__nephuiSelectionAlphaHooked then
+        selection.__nephuiSelectionAlphaHooked = true
+        hooksecurefunc(selection, "SetAlpha", function(frame)
+            if frame.__nephuiSelectionAlphaLock then
+                return
+            end
+            ForceSelectionAlpha(frame)
+        end)
+    end
+
+    for _, key in ipairs(SelectionRegionKeys) do
+        ApplyAlphaToRegion(selection[key])
+    end
+end
+
+function NephUI:ApplySelectionAlphaToFrame(frame)
+    if not frame then
+        return
+    end
+    if frame.IsForbidden and frame:IsForbidden() then
+        return
+    end
+    if frame.Selection then
+        self:ApplySelectionAlpha(frame.Selection)
+    end
+end
+
+function NephUI:ApplySelectionAlphaToAllFrames()
+    local frame = EnumerateFrames()
+    while frame do
+        self:ApplySelectionAlphaToFrame(frame)
+        frame = EnumerateFrames(frame)
+    end
+end
+
+function NephUI:InitializeSelectionAlphaController()
+    if self.__selectionAlphaInitialized then
+        return
+    end
+    self.__selectionAlphaInitialized = true
+
+    local function TryHookSelectionMixin()
+        if self.__selectionMixinHooked then
+            return true
+        end
+        if EditModeSelectionFrameBaseMixin then
+            self.__selectionMixinHooked = true
+            hooksecurefunc(EditModeSelectionFrameBaseMixin, "OnLoad", function(selectionFrame)
+                NephUI:ApplySelectionAlpha(selectionFrame)
+            end)
+            hooksecurefunc(EditModeSelectionFrameBaseMixin, "OnShow", function(selectionFrame)
+                NephUI:ApplySelectionAlpha(selectionFrame)
+            end)
+            return true
+        end
+        return false
+    end
+
+    if not TryHookSelectionMixin() then
+        local waiter = CreateFrame("Frame")
+        waiter:RegisterEvent("ADDON_LOADED")
+        waiter:SetScript("OnEvent", function(self, _, addonName)
+            if addonName == "Blizzard_EditMode" or addonName == ADDON_NAME then
+                if TryHookSelectionMixin() then
+                    self:UnregisterEvent("ADDON_LOADED")
+                    self:SetScript("OnEvent", nil)
+                end
+            end
+        end)
+    end
+
+    self:ApplySelectionAlphaToAllFrames()
+    C_Timer.After(0.5, function()
+        NephUI:ApplySelectionAlphaToAllFrames()
+    end)
+
+    self.SelectionAlphaTicker = C_Timer.NewTicker(1.0, function()
+        if EditModeManagerFrame and EditModeManagerFrame.editModeActive then
+            NephUI:ApplySelectionAlphaToAllFrames()
+        end
+    end)
+end
+
 function NephUI:ExportProfileToString()
     if not self.db or not self.db.profile then
         return "No profile loaded."
@@ -90,7 +231,15 @@ function NephUI:OnInitialize()
         error("NephUI: Defaults not loaded! Make sure Core/Defaults.lua is loaded before Core/Main.lua")
     end
     
+    -- Use a unique database namespace to avoid conflicts with other addons
+    -- The name must match the SavedVariables in NephUI.toc
     self.db = LibStub("AceDB-3.0"):New("NephUIDB", defaults, true)
+    
+    -- Verify the database was created with the correct namespace
+    if not self.db or not self.db.sv then
+        error("NephUI: Failed to initialize database! Check SavedVariables in NephUI.toc")
+    end
+    
     ns.db = self.db
 
     self.db.RegisterCallback(self, "OnProfileChanged", "OnProfileChanged")
@@ -159,6 +308,41 @@ function NephUI:UI_SCALE_CHANGED()
     self:PixelScaleChanged('UI_SCALE_CHANGED')
 end
 
+local function StyleMicroButtonRegion(button, region)
+    if not (button and region) then
+        return
+    end
+    if region.__nephuiStyled then
+        return
+    end
+
+    region.__nephuiStyled = true
+    region:SetTexture(WHITE8)
+    region:SetVertexColor(0, 0, 0, 1)
+    region:SetAlpha(0.8)
+    region:ClearAllPoints()
+    region:SetPoint("TOPLEFT", button, 2.5, -2.5)
+    region:SetPoint("BOTTOMRIGHT", button, -2.5, 2.5)
+end
+
+local function StyleMicroButton(button)
+    if not button then
+        return
+    end
+    StyleMicroButtonRegion(button, button.Background)
+    StyleMicroButtonRegion(button, button.PushedBackground)
+end
+
+function NephUI:StyleMicroButtons()
+    if type(MICRO_BUTTONS) == "table" then
+        for _, name in ipairs(MICRO_BUTTONS) do
+            StyleMicroButton(_G[name])
+        end
+    end
+    -- Fallback if MICRO_BUTTONS is missing
+    StyleMicroButton(_G.CharacterMicroButton)
+end
+
 function NephUI:PLAYER_LOGIN()
     if self.ApplyGlobalFont then
         self:ApplyGlobalFont()
@@ -181,8 +365,16 @@ function NephUI:OnEnable()
     
     self:RegisterEvent("PLAYER_LOGIN")
     
+    C_Timer.After(0.1, function()
+        NephUI:StyleMicroButtons()
+    end)
+    
     if self.IconViewers and self.IconViewers.HookViewers then
         self.IconViewers:HookViewers()
+    end
+
+    if self.IconViewers and self.IconViewers.BuffBarCooldownViewer and self.IconViewers.BuffBarCooldownViewer.Initialize then
+        self.IconViewers.BuffBarCooldownViewer:Initialize()
     end
 
     if self.ProcGlow and self.ProcGlow.Initialize then
@@ -197,6 +389,14 @@ function NephUI:OnEnable()
     
     if self.ResourceBars and self.ResourceBars.Initialize then
         self.ResourceBars:Initialize()
+    end
+
+    if self.PartyFrames and self.PartyFrames.Initialize then
+        self.PartyFrames:Initialize()
+    end
+
+    if self.RaidFrames and self.RaidFrames.Initialize then
+        self.RaidFrames:Initialize()
     end
     
     if self.AutoUIScale and self.AutoUIScale.Initialize then
@@ -225,12 +425,23 @@ function NephUI:OnEnable()
         self.BuffDebuffFrames:Initialize()
     end
     
+    if self.QOL and self.QOL.Initialize then
+        self.QOL:Initialize()
+    end
+
+    if self.CharacterPanel and self.CharacterPanel.Initialize then
+        self.CharacterPanel:Initialize()
+    end
+    
     C_Timer.After(0.1, function()
         if self.CastBars and self.CastBars.HookTargetAndFocusCastBars then
             self.CastBars:HookTargetAndFocusCastBars()
         end
         if self.CastBars and self.CastBars.HookFocusCastBar then
             self.CastBars:HookFocusCastBar()
+        end
+        if self.CastBars and self.CastBars.HookBossCastBars then
+            self.CastBars:HookBossCastBars()
         end
     end)
     
@@ -267,6 +478,13 @@ function NephUI:OnEnable()
             self.IconViewers:AutoLoadBuffIcons()
         end)
     end
+
+    -- Ensure all viewers are skinned on load
+    if self.IconViewers and self.IconViewers.RefreshAll then
+        C_Timer.After(1.0, function()
+            self.IconViewers:RefreshAll()
+        end)
+    end
     
     if self.CustomIcons then
         C_Timer.After(1.5, function()
@@ -276,8 +494,11 @@ function NephUI:OnEnable()
             if self.CustomIcons.CreateTrinketsTrackerFrame then
                 self.CustomIcons:CreateTrinketsTrackerFrame()
             end
+            if self.CustomIcons.CreateDefensivesTrackerFrame then
+                self.CustomIcons:CreateDefensivesTrackerFrame()
+            end
         end)
-        
+
         C_Timer.After(2.5, function()
             if self.CustomIcons.ApplyCustomIconsLayout then
                 self.CustomIcons:ApplyCustomIconsLayout()
@@ -285,8 +506,13 @@ function NephUI:OnEnable()
             if self.CustomIcons.ApplyTrinketsLayout then
                 self.CustomIcons:ApplyTrinketsLayout()
             end
+            if self.CustomIcons.ApplyDefensivesLayout then
+                self.CustomIcons:ApplyDefensivesLayout()
+            end
         end)
     end
+
+    self:InitializeSelectionAlphaController()
 end
 
 function NephUI:OpenConfig()
@@ -381,26 +607,16 @@ function NephUI:RefreshViewers()
 end
 
 function NephUI:RefreshCustomIcons()
-    if not (self.CustomIcons and self.db and self.db.profile and self.db.profile.customIcons and self.db.profile.customIcons.enabled) then
+    if not (self.CustomIcons and self.db and self.db.profile and self.db.profile.customIcons) then
+        return
+    end
+    if self.db.profile.customIcons.enabled == false then
         return
     end
 
     local module = self.CustomIcons
-
     if module.CreateCustomIconsTrackerFrame then
         module:CreateCustomIconsTrackerFrame()
-    end
-    if module.CreateTrinketsTrackerFrame then
-        module:CreateTrinketsTrackerFrame()
-    end
-    if module.UpdateTrinketWeaponTracking then
-        module:UpdateTrinketWeaponTracking()
-    end
-    if module.ApplyCustomIconsLayout then
-        module:ApplyCustomIconsLayout()
-    end
-    if module.ApplyTrinketsLayout then
-        module:ApplyTrinketsLayout()
     end
 end
 
@@ -426,16 +642,32 @@ function NephUI:RefreshAll()
     if self.BuffDebuffFrames and self.BuffDebuffFrames.RefreshAll then
         self.BuffDebuffFrames:RefreshAll()
     end
+
+    if self.QOL and self.QOL.Refresh then
+        self.QOL:Refresh()
+    end
+
+    if self.CharacterPanel and self.CharacterPanel.Refresh then
+        self.CharacterPanel:Refresh()
+    end
     
     if self.UnitFrames and self.UnitFrames.RefreshFrames then
         self.UnitFrames:RefreshFrames()
+    end
+
+    if self.PartyFrames and self.PartyFrames.Refresh then
+        self.PartyFrames:Refresh()
+    end
+
+    if self.RaidFrames and self.RaidFrames.Refresh then
+        self.RaidFrames:Refresh()
     end
     
     if self.Minimap and self.Minimap.Refresh then
         self.Minimap:Refresh()
     end
     
-    if self.CustomIcons and self.db.profile.customIcons and self.db.profile.customIcons.enabled then
+    if self.CustomIcons and self.db.profile.customIcons and self.db.profile.customIcons.enabled ~= false then
         self:RefreshCustomIcons()
     end
 end

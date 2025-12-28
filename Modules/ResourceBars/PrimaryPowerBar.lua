@@ -14,6 +14,10 @@ local GetResourceColor = ResourceBars.GetResourceColor
 local GetPrimaryResourceValue = ResourceBars.GetPrimaryResourceValue
 local tickedPowerTypes = ResourceBars.tickedPowerTypes
 
+local function PixelSnap(value)
+    return math.max(0, math.floor((value or 0) + 0.5))
+end
+
 -- PRIMARY POWER BAR
 
 function ResourceBars:GetPowerBar()
@@ -30,14 +34,7 @@ function ResourceBars:GetPowerBar()
 
     local width = cfg.width or 0
     if width <= 0 then
-        width = (anchor.__cdmIconWidth or anchor:GetWidth())
-        -- Round down to handle decimal values (e.g., 100.9 -> 100) to prevent overflow
-        width = math.floor(width)
-
-        -- Apply trim - scale padding first, then subtract from pixel width
-        local pad = NephUI:Scale(cfg.autoWidthPadding or 5.8)
-        width = width - (pad * 2)
-        if width < 0 then width = 0 end
+        width = PixelSnap(anchor.__cdmIconWidth or anchor:GetWidth())
         -- Width is already in pixels, no need to scale again
     else
         width = NephUI:Scale(width)
@@ -61,8 +58,8 @@ function ResourceBars:GetPowerBar()
 
     -- BORDER
     bar.Border = CreateFrame("Frame", nil, bar, "BackdropTemplate")
-    local borderSize = cfg.borderSize or 1
-    local borderOffset = NephUI:Scale(borderSize)
+    local borderSize = NephUI:ScaleBorder(cfg.borderSize or 1)
+    local borderOffset = borderSize
     bar.Border:SetPoint("TOPLEFT", bar, -borderOffset, borderOffset)
     bar.Border:SetPoint("BOTTOMRIGHT", bar, borderOffset, -borderOffset)
     bar.Border:SetBackdrop({
@@ -75,7 +72,7 @@ function ResourceBars:GetPowerBar()
     -- TEXT FRAME
     bar.TextFrame = CreateFrame("Frame", nil, bar)
     bar.TextFrame:SetAllPoints(bar)
-    bar.TextFrame:SetFrameLevel(bar.StatusBar:GetFrameLevel() + 3)
+    bar.TextFrame:SetFrameLevel(bar.StatusBar:GetFrameLevel() + 25)
 
     bar.TextValue = bar.TextFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     bar.TextValue:SetPoint("CENTER", bar.TextFrame, "CENTER", NephUI:Scale(cfg.textX or 0), NephUI:Scale(cfg.textY or 0))
@@ -108,7 +105,7 @@ function ResourceBars:UpdatePowerBar()
 
     local bar = self:GetPowerBar()
     local resource = GetPrimaryResource()
-
+    
     if not resource then
         bar:Hide()
         return
@@ -125,26 +122,37 @@ function ResourceBars:UpdatePowerBar()
 
     -- Update layout
     local anchorPoint = cfg.anchorPoint or "CENTER"
-    bar:ClearAllPoints()
-    bar:SetPoint("CENTER", anchor, anchorPoint, NephUI:Scale(cfg.offsetX or 0), NephUI:Scale(cfg.offsetY or 6))
-    bar:SetHeight(NephUI:Scale(cfg.height or 6))
+    local desiredHeight = NephUI:Scale(cfg.height or 6)
+    local desiredX = NephUI:Scale(cfg.offsetX or 0)
+    local desiredY = NephUI:Scale(cfg.offsetY or 6)
 
     local width = cfg.width or 0
     if width <= 0 then
-        width = (anchor.__cdmIconWidth or anchor:GetWidth())
-        -- Round down to handle decimal values (e.g., 100.9 -> 100) to prevent overflow
-        width = math.floor(width)
-
-        -- Apply trim - scale padding first, then subtract from pixel width
-        local pad = NephUI:Scale(cfg.autoWidthPadding or 5.8)
-        width = width - (pad * 2)
-        if width < 0 then width = 0 end
+        width = PixelSnap(anchor.__cdmIconWidth or anchor:GetWidth())
         -- Width is already in pixels, no need to scale again
     else
         width = NephUI:Scale(width)
     end
 
-    bar:SetWidth(width)
+    -- Only reposition / resize when something actually changed to avoid texture flicker
+    if bar._lastAnchor ~= anchor or bar._lastAnchorPoint ~= anchorPoint or bar._lastOffsetX ~= desiredX or bar._lastOffsetY ~= desiredY then
+        bar:ClearAllPoints()
+        bar:SetPoint("CENTER", anchor, anchorPoint, desiredX, desiredY)
+        bar._lastAnchor = anchor
+        bar._lastAnchorPoint = anchorPoint
+        bar._lastOffsetX = desiredX
+        bar._lastOffsetY = desiredY
+    end
+
+    if bar._lastHeight ~= desiredHeight then
+        bar:SetHeight(desiredHeight)
+        bar._lastHeight = desiredHeight
+    end
+
+    if bar._lastWidth ~= width then
+        bar:SetWidth(width)
+        bar._lastWidth = width
+    end
 
     -- Update background color
     local bgColor = cfg.bgColor or { 0.15, 0.15, 0.15, 1 }
@@ -154,24 +162,27 @@ function ResourceBars:UpdatePowerBar()
 
     -- Update texture (use per-bar texture if set, otherwise use global)
     local tex = NephUI:GetTexture(cfg.texture)
-    bar.StatusBar:SetStatusBarTexture(tex)
+    if bar._lastTexture ~= tex then
+        bar.StatusBar:SetStatusBarTexture(tex)
+        bar._lastTexture = tex
+    end
 
     -- Update border size and color
     local borderSize = cfg.borderSize or 1
     if bar.Border then
-        local borderOffset = NephUI:Scale(borderSize)
+        local scaledBorder = NephUI:ScaleBorder(borderSize)
         bar.Border:ClearAllPoints()
-        bar.Border:SetPoint("TOPLEFT", bar, -borderOffset, borderOffset)
-        bar.Border:SetPoint("BOTTOMRIGHT", bar, borderOffset, -borderOffset)
+        bar.Border:SetPoint("TOPLEFT", bar, -scaledBorder, scaledBorder)
+        bar.Border:SetPoint("BOTTOMRIGHT", bar, scaledBorder, -scaledBorder)
         bar.Border:SetBackdrop({
             edgeFile = "Interface\\Buttons\\WHITE8X8",
-            edgeSize = borderSize,
+            edgeSize = scaledBorder,
         })
         -- Update border color
         local borderColor = cfg.borderColor or { 0, 0, 0, 1 }
         bar.Border:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1)
         -- Show/hide border based on size
-        if borderSize > 0 then
+        if scaledBorder > 0 then
             bar.Border:Show()
         else
             bar.Border:Hide()
@@ -190,7 +201,8 @@ function ResourceBars:UpdatePowerBar()
     bar.StatusBar:SetValue(current)
 
     -- Set bar color
-    if cfg.useClassColor then
+    local powerTypeColors = NephUI.db.profile.powerTypeColors
+    if powerTypeColors.useClassColor then
         -- Class color
         local _, class = UnitClass("player")
         local classColor = RAID_CLASS_COLORS[class]
@@ -201,10 +213,10 @@ function ResourceBars:UpdatePowerBar()
             local color = GetResourceColor(resource)
             bar.StatusBar:SetStatusBarColor(color.r, color.g, color.b)
         end
-    elseif cfg.color then
-        -- Custom color from GUI
-        local r, g, b, a = cfg.color[1], cfg.color[2], cfg.color[3], cfg.color[4] or 1
-        bar.StatusBar:SetStatusBarColor(r, g, b, a)
+    elseif powerTypeColors.colors[resource] then
+        -- Power type specific color
+        local color = powerTypeColors.colors[resource]
+        bar.StatusBar:SetStatusBarColor(color[1], color[2], color[3], color[4] or 1)
     else
         -- Default resource color
         local color = GetResourceColor(resource)
@@ -264,7 +276,7 @@ end
 
 function ResourceBars:UpdatePowerBarTicks(bar, resource, max)
     local cfg = NephUI.db.profile.powerBar
-
+    
     -- Hide all ticks first
     for _, tick in ipairs(bar.ticks) do
         tick:Hide()
@@ -286,8 +298,8 @@ function ResourceBars:UpdatePowerBarTicks(bar, resource, max)
             tick:SetColorTexture(0, 0, 0, 1)
             bar.ticks[i] = tick
         end
-
-        local x = (i / max) * width
+        
+        local x = math.floor((i / max) * width)
         tick:ClearAllPoints()
         -- x is already in pixels (calculated from bar width), no need to scale
         tick:SetPoint("LEFT", bar.StatusBar, "LEFT", x, 0)
@@ -302,5 +314,5 @@ end
 -- Expose to main addon for backwards compatibility
 NephUI.GetPowerBar = function(self) return ResourceBars:GetPowerBar() end
 NephUI.UpdatePowerBar = function(self) return ResourceBars:UpdatePowerBar() end
-NephUI.UpdatePowerBarTicks = function(self, bar, resource, max) return ResourceBars:UpdatePowerBarTicks(bar, resource,
-        max) end
+NephUI.UpdatePowerBarTicks = function(self, bar, resource, max) return ResourceBars:UpdatePowerBarTicks(bar, resource, max) end
+

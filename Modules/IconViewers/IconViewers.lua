@@ -143,6 +143,8 @@ function IconViewers:HookViewers()
                 IconViewers:ApplyViewerSkin(f)
             end)
 
+            -- Skinning will be handled by RefreshAll call in main initialization
+
             viewer:HookScript("OnSizeChanged", function(f)
                 if f.__cdmLayoutSuppressed or f.__cdmLayoutRunning then
                     return
@@ -152,26 +154,70 @@ function IconViewers:HookViewers()
                 end
             end)
 
-            -- Different update rates for different viewers
-            local updateInterval = 0.01
+            -- Event-based updates instead of OnUpdate for better performance
             if name == "BuffIconCooldownViewer" then
-                updateInterval = 0.05
-            end
-
-            viewer:HookScript("OnUpdate", function(f, elapsed)
-                f.__cdmElapsed = (f.__cdmElapsed or 0) + elapsed
-                if f.__cdmElapsed > updateInterval then
-                    f.__cdmElapsed = 0
-                    if f:IsShown() then
-                        if IconViewers.RescanViewer then
-                            IconViewers:RescanViewer(f)
+                -- Buff viewer: hook into UNIT_AURA events for immediate updates
+                if not viewer.__cdmAuraHook then
+                    viewer.__cdmAuraHook = CreateFrame("Frame")
+                    viewer.__cdmAuraHook:RegisterEvent("UNIT_AURA")
+                    viewer.__cdmAuraHook:SetScript("OnEvent", function(_, event, unit)
+                        if unit == "player" and viewer:IsShown() then
+                            -- Throttled rescan to avoid spam
+                            if not viewer.__cdmRescanPending then
+                                viewer.__cdmRescanPending = true
+                                C_Timer.After(0.1, function()
+                                    viewer.__cdmRescanPending = nil
+                                    if viewer:IsShown() and IconViewers.RescanViewer then
+                                        IconViewers:RescanViewer(viewer)
+                                    end
+                                end)
+                            end
                         end
-                        if not InCombatLockdown() then
-                            IconViewers:ProcessPendingIcons()
-                        end
-                    end
+                    end)
                 end
-            end)
+
+                -- Minimal OnUpdate for pending icons only
+                local lastProcessTime = 0
+                viewer:HookScript("OnUpdate", function(f, elapsed)
+                    lastProcessTime = lastProcessTime + elapsed
+                    if lastProcessTime > 1.0 and not InCombatLockdown() then -- Process once per second
+                        lastProcessTime = 0
+                        IconViewers:ProcessPendingIcons()
+                    end
+                end)
+            else
+                -- Other viewers: use SPELL_UPDATE_COOLDOWN and other events
+                if not viewer.__cdmCooldownHook then
+                    viewer.__cdmCooldownHook = CreateFrame("Frame")
+                    viewer.__cdmCooldownHook:RegisterEvent("SPELL_UPDATE_COOLDOWN")
+                    viewer.__cdmCooldownHook:RegisterEvent("BAG_UPDATE_COOLDOWN")
+                    viewer.__cdmCooldownHook:RegisterEvent("PET_BAR_UPDATE_COOLDOWN")
+                    viewer.__cdmCooldownHook:SetScript("OnEvent", function(_, event)
+                        if viewer:IsShown() then
+                            -- Throttled rescan to avoid spam during heavy cooldown usage
+                            if not viewer.__cdmRescanPending then
+                                viewer.__cdmRescanPending = true
+                                C_Timer.After(0.2, function()
+                                    viewer.__cdmRescanPending = nil
+                                    if viewer:IsShown() and IconViewers.RescanViewer then
+                                        IconViewers:RescanViewer(viewer)
+                                    end
+                                end)
+                            end
+                        end
+                    end)
+                end
+
+                -- Minimal OnUpdate for pending icons only
+                local lastProcessTime = 0
+                viewer:HookScript("OnUpdate", function(f, elapsed)
+                    lastProcessTime = lastProcessTime + elapsed
+                    if lastProcessTime > 2.0 and not InCombatLockdown() then -- Process every 2 seconds
+                        lastProcessTime = 0
+                        IconViewers:ProcessPendingIcons()
+                    end
+                end)
+            end
 
             self:ApplyViewerSkin(viewer)
         end
@@ -209,11 +255,25 @@ function IconViewers:AutoLoadBuffIcons(retryCount)
     viewer.__nephuiInitialLoading = true
     
     -- Open CooldownViewerSettings frame instead of showing BuffIconCooldownViewer
-    local settingsFrame = _G["CooldownViewerSettings"]
+    local settingsFrame = _G["BuffIconCooldownViewer"]
     if settingsFrame then
-        print("|cff00ff00[NephUI] We must open this so blizzard doesn't hate our fucking guts itll close I swear...|r")
         settingsFrame:Show()
         settingsFrame:Raise()
+
+        if not settingsFrame.__nephuiLayoutHook then
+            settingsFrame.__nephuiLayoutHook = true
+            settingsFrame:HookScript("OnHide", function()
+                local buffViewer = _G["BuffIconCooldownViewer"]
+                if buffViewer and buffViewer:IsShown() and IconViewers.ApplyViewerLayout then
+                    -- Delay slightly so the hide completes before relayout
+                    C_Timer.After(0.05, function()
+                        if buffViewer and buffViewer:IsShown() and IconViewers.ApplyViewerLayout and not InCombatLockdown() then
+                            IconViewers:ApplyViewerLayout(buffViewer)
+                        end
+                    end)
+                end
+            end)
+        end
     end
     
     local settings = NephUI.db.profile.viewers["BuffIconCooldownViewer"]
@@ -291,10 +351,19 @@ function IconViewers:AutoLoadBuffIcons(retryCount)
         
         -- Hide CooldownViewerSettings frame after a couple seconds
         C_Timer.After(2.0, function()
-            local settingsFrame = _G["CooldownViewerSettings"]
+            local settingsFrame = _G["BuffIconCooldownViewer"]
             if settingsFrame and settingsFrame:IsShown() then
-                print("|cff00ff00[NephUI] Closing CooldownViewerSettings panel automatically...|r")
                 settingsFrame:Hide()
+            elseif not settingsFrame then
+                -- If the frame vanished, still attempt a delayed relayout
+                local buffViewer = _G["BuffIconCooldownViewer"]
+                if buffViewer and buffViewer:IsShown() and IconViewers.ApplyViewerLayout and not InCombatLockdown() then
+                    C_Timer.After(0.05, function()
+                        if buffViewer and buffViewer:IsShown() and IconViewers.ApplyViewerLayout and not InCombatLockdown() then
+                            IconViewers:ApplyViewerLayout(buffViewer)
+                        end
+                    end)
+                end
             end
         end)
     end
@@ -303,9 +372,13 @@ end
 function IconViewers:RefreshAll()
     for _, name in ipairs(viewers) do
         local viewer = _G[name]
-        if viewer and viewer:IsShown() then
+        if viewer then
             self:ApplyViewerSkin(viewer)
         end
+    end
+
+    if self.BuffBarCooldownViewer and self.BuffBarCooldownViewer.Refresh then
+        self.BuffBarCooldownViewer:Refresh()
     end
 end
 

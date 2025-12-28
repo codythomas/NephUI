@@ -8,6 +8,7 @@ local LSM = LibStub("LibSharedMedia-3.0")
 
 -- Texture paths
 local BACKDROP_TEXTURE = "Interface\\Buttons\\WHITE8x8"
+local HIGHLIGHT_TEXTURE = [[Interface\AddOns\NephUI\Media\white_border.tga]]
 
 -- Track processed buttons to avoid double-processing
 local processedButtons = {}
@@ -29,6 +30,20 @@ end
 -- Icon zoom settings (crop edges for cleaner look)
 local ICON_ZOOM = { 0.08, 0.92, 0.08, 0.92 }
 
+-- Collect micro menu buttons using Blizzard's MICRO_BUTTONS list
+local function CollectMicroButtons()
+    local collected = {}
+    if type(MICRO_BUTTONS) == "table" then
+        for _, name in ipairs(MICRO_BUTTONS) do
+            local button = _G[name]
+            if button then
+                table.insert(collected, button)
+            end
+        end
+    end
+    return collected
+end
+
 -- Mapping of bar config names to actual bar frame names and prefixes
 local BAR_FRAME_MAP = {
     bar1 = { frame = "MainActionBar", prefix = "Action" },
@@ -41,6 +56,7 @@ local BAR_FRAME_MAP = {
     bar8 = { frame = "MultiBar7", prefix = "MultiBar7" },
     petBar = { frame = "PetActionBar", prefix = "PetAction" },
     stanceBar = { frame = "StanceBar", prefix = "Stance" },
+    microMenu = { frame = "MicroMenu", fallbackFrame = "MicroButtonAndBagsBar", buttonProvider = CollectMicroButtons },
 }
 
 -- Action bar prefixes to iterate through
@@ -72,6 +88,14 @@ local function GetActionBarFont(cfg)
     end
     -- Fallback to global font
     return NephUI:GetGlobalFont()
+end
+
+-- Scale helper that respects NephUI's pixel perfect multiplier
+local function ScaleOffset(value)
+    if not value or value == 0 then
+        return 0
+    end
+    return NephUI:Scale(value)
 end
 
 -- Function to validate if keybind text contains meaningful content
@@ -159,7 +183,9 @@ local function StyleTextElement(element, textCfg, defaultFont)
     
     -- Apply position
     element:ClearAllPoints()
-    element:SetPoint(anchorPoint, element:GetParent(), relativePoint, offsetX, offsetY)
+    local scaledOffsetX = ScaleOffset(offsetX)
+    local scaledOffsetY = ScaleOffset(offsetY)
+    element:SetPoint(anchorPoint, element:GetParent(), relativePoint, scaledOffsetX, scaledOffsetY)
 end
 
 -- Function to style a single action button
@@ -203,26 +229,61 @@ local function StyleActionButton(button)
         button.SlotBackground:Hide()
     end
     
+    if button.SlotArt then
+        button.SlotArt:Hide()
+    end
+    
     -- Create or update backdrop texture
     if not button.__nephuiBackdrop then
         button.__nephuiBackdrop = button:CreateTexture(nil, "BACKGROUND", nil, -1)
     end
     
     local backdrop = button.__nephuiBackdrop
+    local backdropColor = cfg.backdropColor or {0.1, 0.1, 0.1, 1}
     backdrop:SetTexture(BACKDROP_TEXTURE)
     -- Round to nearest integer for pixel perfect rendering
-    local backdropOffset = math.floor(NephUI:Scale(1) + 0.5)
+    local backdropOffset = (NephUI.ScaleBorder and NephUI:ScaleBorder(1)) or math.floor(NephUI:Scale(1) + 0.5)
     backdrop:SetPoint("TOPLEFT", button, "TOPLEFT", -backdropOffset, backdropOffset)
     backdrop:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", backdropOffset, -backdropOffset)
-    backdrop:SetVertexColor(unpack(cfg.backdropColor or {0.1, 0.1, 0.1, 1}))
+    backdrop:SetVertexColor(unpack(backdropColor))
     backdrop:Show()
+    
+    -- Optional border that grows outward from the backdrop using Blizzard's WHITE8x8 texture
+    local configuredBorderSize = math.max(0, cfg.borderSize or 0)
+    local scaledBorderSize = (NephUI.ScaleBorder and NephUI:ScaleBorder(configuredBorderSize)) or math.floor(NephUI:Scale(configuredBorderSize) + 0.5)
+    if scaledBorderSize > 0 then
+        if not button.__nephuiBorder then
+            button.__nephuiBorder = button:CreateTexture(nil, "BACKGROUND", nil, -2)
+        end
+        local border = button.__nephuiBorder
+        border:SetTexture(BACKDROP_TEXTURE)
+        local totalOffset = backdropOffset + scaledBorderSize
+        border:SetPoint("TOPLEFT", button, "TOPLEFT", -totalOffset, totalOffset)
+        border:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", totalOffset, -totalOffset)
+        local borderColor = cfg.borderColor or {0, 0, 0, 1}
+        border:SetVertexColor(unpack(borderColor))
+        border:Show()
+    elseif button.__nephuiBorder then
+        button.__nephuiBorder:Hide()
+    end
     
     -- Style the icon
     icon:SetTexCoord(unpack(ICON_ZOOM))
     icon:SetDrawLayer("BACKGROUND", 0)
     icon:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
     icon:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, 0)
-    
+
+    -- Update highlight texture to NephUI custom border
+    local highlight = button:GetHighlightTexture()
+    if highlight then
+        highlight:SetTexture(HIGHLIGHT_TEXTURE)
+        highlight:SetTexCoord(0, 1, 0, 1)
+        highlight:ClearAllPoints()
+        highlight:SetPoint("TOPLEFT", button, "TOPLEFT", -backdropOffset, backdropOffset)
+        highlight:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", backdropOffset, -backdropOffset)
+        highlight:SetBlendMode("ADD")
+    end
+
     -- Use Blizzard's default textures (no replacement needed)
     
     -- Style cooldown frame
@@ -316,6 +377,10 @@ end
 
 -- Collect all buttons for a given action bar prefix
 local function CollectBarButtons(prefix)
+    if not prefix then
+        return {}
+    end
+
     local collected = {}
     for slot = 1, 12 do
         local actionButton = GetActionButton(prefix, slot)
@@ -437,7 +502,7 @@ local function IsMouseOverBarOrButtons(barFrame, barButtons)
 end
 
 -- Attach mouseover behavior to an action bar
-local function AttachMouseoverToBar(barFrame, buttonPrefix)
+local function AttachMouseoverToBar(barFrame, buttonPrefix, buttonProvider)
     if not barFrame then return end
     
     -- Clean up any existing handlers first
@@ -449,7 +514,12 @@ local function AttachMouseoverToBar(barFrame, buttonPrefix)
     end
     
     local fadeDelay = 0.2
-    local barButtons = CollectBarButtons(buttonPrefix)
+    local barButtons = {}
+    if type(buttonProvider) == "function" then
+        barButtons = buttonProvider() or {}
+    else
+        barButtons = CollectBarButtons(buttonPrefix)
+    end
     
     -- Store barButtons on the frame for later access
     barFrame.__nephuiBarButtons = barButtons
@@ -572,10 +642,13 @@ local function ConfigureMouseoverBars()
     -- If mouseover is globally disabled, restore all bars to full visibility
     if not mouseoverSettings or not mouseoverSettings.enabled then
         for configKey, barData in pairs(BAR_FRAME_MAP) do
-            local frameName = barData.frame
-            local buttonPrefix = barData.prefix
-            -- Handle MainActionBar/MainMenuBar compatibility
-            local barFrame = _G[frameName] or (frameName == "MainActionBar" and _G["MainMenuBar"])
+        local frameName = barData.frame
+        local buttonPrefix = barData.prefix
+        local fallbackFrame = barData.fallbackFrame
+        -- Handle MainActionBar/MainMenuBar compatibility and custom fallbacks
+        local barFrame = _G[frameName]
+            or (fallbackFrame and _G[fallbackFrame])
+            or (frameName == "MainActionBar" and _G["MainMenuBar"])
             
             if barFrame then
                 ClearBarMouseoverHandlers(barFrame, buttonPrefix)
@@ -592,13 +665,17 @@ local function ConfigureMouseoverBars()
     for configKey, barData in pairs(BAR_FRAME_MAP) do
         local frameName = barData.frame
         local buttonPrefix = barData.prefix
-        -- Handle MainActionBar/MainMenuBar compatibility
-        local barFrame = _G[frameName] or (frameName == "MainActionBar" and _G["MainMenuBar"])
+        local fallbackFrame = barData.fallbackFrame
+        local buttonProvider = barData.buttonProvider
+        -- Handle MainActionBar/MainMenuBar compatibility and custom fallbacks
+        local barFrame = _G[frameName]
+            or (fallbackFrame and _G[fallbackFrame])
+            or (frameName == "MainActionBar" and _G["MainMenuBar"])
         
-        if barFrame and buttonPrefix then
+        if barFrame and (buttonPrefix or buttonProvider) then
             if perBarSettings[configKey] then
                 -- Enable mouseover for this specific bar
-                AttachMouseoverToBar(barFrame, buttonPrefix)
+                AttachMouseoverToBar(barFrame, buttonPrefix, buttonProvider)
             else
                 -- Disable mouseover and restore visibility
                 ClearBarMouseoverHandlers(barFrame, buttonPrefix)
@@ -635,6 +712,11 @@ function ActionBars:StyleAllBars()
     local cfg = NephUI.db.profile.actionBars
     if not cfg or not cfg.enabled then
         return
+    end
+    
+    -- Hide Blizzard main bar art if present
+    if MainActionBar and MainActionBar.BorderArt then
+        MainActionBar.BorderArt:Hide()
     end
     
     -- Clear processed buttons cache

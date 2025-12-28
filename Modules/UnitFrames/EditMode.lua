@@ -262,10 +262,11 @@ local function HideBlizzardSelectionFrames()
     HideSelectionFrame(PetFrame, PetFrame and PetFrame.Selection)
 end
 
-local function EnsureEditModeUnitVisibility(unitFrame, inEditMode)
+-- Force unit frames to stay visible while anchors are shown
+local function EnsureAnchorModeUnitVisibility(unitFrame, shouldForceShow)
     if not unitFrame then return end
 
-    if inEditMode then
+    if shouldForceShow then
         if unitFrame.__nephuiUnitWatchActive then
             UnregisterUnitWatch(unitFrame)
             unitFrame.__nephuiUnitWatchActive = nil
@@ -318,7 +319,7 @@ function UF:UpdateEditModeAnchors()
             local unitDB = db[dbUnit]
             local enabled = unitDB and unitDB.Enabled ~= false
             if enabled then
-                EnsureEditModeUnitVisibility(unitFrame, inEditMode)
+                EnsureAnchorModeUnitVisibility(unitFrame, showAnchors)
 
                 if not unitFrame.editModeAnchor then
                     self:CreateEditModeAnchor(unit)
@@ -353,6 +354,9 @@ function UF:UpdateEditModeAnchors()
         end
     end
     
+    -- Update boss anchor
+    self:UpdateBossAnchor()
+
     -- Update center line visibility
     if NephUI and NephUI.UpdateCenterLine then
         NephUI.UpdateCenterLine()
@@ -396,7 +400,7 @@ function UF:HookEditMode()
         
         -- Periodic update to keep anchors in sync (in case unit frames move)
         if not self.AnchorUpdateTicker then
-            self.AnchorUpdateTicker = C_Timer.NewTicker(0.1, function()
+            self.AnchorUpdateTicker = C_Timer.NewTicker(1/60, function() -- 60 FPS minimum as requested
                 local db = NephUI.db.profile.unitFrames
                 local toggleEnabled = db and db.General and db.General.ShowEditModeAnchors ~= false
                 local inEditMode = EditModeManagerFrame and EditModeManagerFrame.editModeActive

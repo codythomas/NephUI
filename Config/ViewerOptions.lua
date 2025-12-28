@@ -65,6 +65,29 @@ local function CreateViewerOptions(viewerKey, displayName, order)
                 name = "Icon Layout",
                 order = 10,
             },
+            rowLimit = {
+                type = "range",
+                name = "Icons Per Row",
+                desc = "Maximum icons per row (0 = unlimited, single row). When exceeded, creates new rows that grow from the center.",
+                order = 10.9,
+                width = "normal",
+                min = 0, max = 20, step = 1,
+                get = function() return NephUI.db.profile.viewers[viewerKey].rowLimit or 0 end,
+                set = function(_, val)
+                    NephUI.db.profile.viewers[viewerKey].rowLimit = val
+                    -- Force immediate layout update
+                    local viewer = _G[viewerKey]
+                    if viewer then
+                        viewer.__cdmLastGrowthDirection = nil
+                        if NephUI.IconViewers and NephUI.IconViewers.ApplyViewerLayout then
+                            NephUI.IconViewers:ApplyViewerLayout(viewer)
+                        end
+                    end
+                    if NephUI.RefreshViewers then
+                        NephUI:RefreshViewers()
+                    end
+                end,
+            },
             iconSize = {
                 type = "range",
                 name = "Icon Size",
@@ -82,6 +105,93 @@ local function CreateViewerOptions(viewerKey, displayName, order)
                             NephUI.IconViewers:SkinAllIconsInViewer(viewer)
                         end
                         if NephUI.IconViewers.ApplyViewerLayout then
+                            NephUI.IconViewers:ApplyViewerLayout(viewer)
+                        end
+                    end
+                    if NephUI.RefreshViewers then
+                        NephUI:RefreshViewers()
+                    end
+                end,
+            },
+            rowIconSize1 = {
+                type = "range",
+                name = "Row 1 Icon Size",
+                desc = "Override the icon size for the first row. Set to 0 to use the base Icon Size value.",
+                order = 11.1,
+                width = "normal",
+                min = 0, max = 128, step = 1,
+                get = function()
+                    local sizes = NephUI.db.profile.viewers[viewerKey].rowIconSizes
+                    return (sizes and sizes[1]) or 0
+                end,
+                set = function(_, val)
+                    local profile = NephUI.db.profile.viewers[viewerKey]
+                    profile.rowIconSizes = profile.rowIconSizes or {}
+                    profile.rowIconSizes[1] = (val and val > 0) and val or nil
+
+                    local viewer = _G[viewerKey]
+                    if viewer then
+                        viewer.__cdmLastGrowthDirection = nil
+                        viewer.__cdmLastAppearanceKey = nil
+                        if NephUI.IconViewers and NephUI.IconViewers.ApplyViewerLayout then
+                            NephUI.IconViewers:ApplyViewerLayout(viewer)
+                        end
+                    end
+                    if NephUI.RefreshViewers then
+                        NephUI:RefreshViewers()
+                    end
+                end,
+            },
+            rowIconSize2 = {
+                type = "range",
+                name = "Row 2 Icon Size",
+                desc = "Override the icon size for the second row. Set to 0 to use the base Icon Size value.",
+                order = 11.2,
+                width = "normal",
+                min = 0, max = 128, step = 1,
+                get = function()
+                    local sizes = NephUI.db.profile.viewers[viewerKey].rowIconSizes
+                    return (sizes and sizes[2]) or 0
+                end,
+                set = function(_, val)
+                    local profile = NephUI.db.profile.viewers[viewerKey]
+                    profile.rowIconSizes = profile.rowIconSizes or {}
+                    profile.rowIconSizes[2] = (val and val > 0) and val or nil
+
+                    local viewer = _G[viewerKey]
+                    if viewer then
+                        viewer.__cdmLastGrowthDirection = nil
+                        viewer.__cdmLastAppearanceKey = nil
+                        if NephUI.IconViewers and NephUI.IconViewers.ApplyViewerLayout then
+                            NephUI.IconViewers:ApplyViewerLayout(viewer)
+                        end
+                    end
+                    if NephUI.RefreshViewers then
+                        NephUI:RefreshViewers()
+                    end
+                end,
+            },
+            rowIconSize3 = {
+                type = "range",
+                name = "Row 3 Icon Size",
+                desc = "Override the icon size for the third row. Set to 0 to use the base Icon Size value.",
+                order = 11.3,
+                width = "normal",
+                min = 0, max = 128, step = 1,
+                get = function()
+                    local sizes = NephUI.db.profile.viewers[viewerKey].rowIconSizes
+                    return (sizes and sizes[3]) or 0
+                end,
+                set = function(_, val)
+                    local profile = NephUI.db.profile.viewers[viewerKey]
+                    profile.rowIconSizes = profile.rowIconSizes or {}
+                    profile.rowIconSizes[3] = (val and val > 0) and val or nil
+
+                    local viewer = _G[viewerKey]
+                    if viewer then
+                        viewer.__cdmLastGrowthDirection = nil
+                        viewer.__cdmLastAppearanceKey = nil
+                        if NephUI.IconViewers and NephUI.IconViewers.ApplyViewerLayout then
                             NephUI.IconViewers:ApplyViewerLayout(viewer)
                         end
                     end
@@ -168,51 +278,6 @@ local function CreateViewerOptions(viewerKey, displayName, order)
                     if viewer and NephUI.IconViewers then
                         if NephUI.IconViewers.SkinAllIconsInViewer then
                             NephUI.IconViewers:SkinAllIconsInViewer(viewer)
-                        end
-                    end
-                    if NephUI.RefreshViewers then
-                        NephUI:RefreshViewers()
-                    end
-                end,
-            },
-            padding = {
-                type = "range",
-                name = "Padding",
-                desc = "Padding around icons, cooldown swipe, and all icon elements (affects icon texture, cooldown overlay, and other elements)",
-                order = 15,
-                width = "normal",
-                min = 0, max = 20, step = 1,
-                get = function() return NephUI.db.profile.viewers[viewerKey].padding or 5 end,
-                set = function(_, val)
-                    NephUI.db.profile.viewers[viewerKey].padding = val
-                    -- Force re-skin of all icons in this viewer (padding affects all icon elements)
-                    local viewer = _G[viewerKey]
-                    if viewer and NephUI.IconViewers then
-                        if NephUI.IconViewers.SkinAllIconsInViewer then
-                            NephUI.IconViewers:SkinAllIconsInViewer(viewer)
-                        end
-                    end
-                    if NephUI.RefreshViewers then
-                        NephUI:RefreshViewers()
-                    end
-                end,
-            },
-            rowLimit = {
-                type = "range",
-                name = "Icons Per Row",
-                desc = "Maximum icons per row (0 = unlimited, single row). When exceeded, creates new rows that grow from the center.",
-                order = 16,
-                width = "normal",
-                min = 0, max = 20, step = 1,
-                get = function() return NephUI.db.profile.viewers[viewerKey].rowLimit or 0 end,
-                set = function(_, val)
-                    NephUI.db.profile.viewers[viewerKey].rowLimit = val
-                    -- Force immediate layout update
-                    local viewer = _G[viewerKey]
-                    if viewer then
-                        viewer.__cdmLastGrowthDirection = nil
-                        if NephUI.IconViewers and NephUI.IconViewers.ApplyViewerLayout then
-                            NephUI.IconViewers:ApplyViewerLayout(viewer)
                         end
                     end
                     if NephUI.RefreshViewers then

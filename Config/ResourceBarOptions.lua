@@ -7,6 +7,7 @@ local function GetViewerOptions()
         ["EssentialCooldownViewer"] = "Essential Cooldowns",
         ["UtilityCooldownViewer"] = "Utility Cooldowns",
         ["BuffIconCooldownViewer"] = "Buff Icons",
+        ["BuffBarCooldownViewer"] = "Buff Bar",
     }
 end
 
@@ -91,7 +92,7 @@ local function CreateResourceBarOptions()
                         name = "Height",
                         order = 12,
                         width = "normal",
-                        min = 2, max = 30, step = 1,
+                        min = 2, max = 100, step = 1,
                         get = function() return NephUI.db.profile.powerBar.height end,
                         set = function(_, val)
                             NephUI.db.profile.powerBar.height = val
@@ -104,7 +105,7 @@ local function CreateResourceBarOptions()
                         desc = "0 = automatic width based on icons",
                         order = 13,
                         width = "normal",
-                        min = 0, max = 500, step = 1,
+                        min = 0, max = 1000, step = 1,
                         get = function() return NephUI.db.profile.powerBar.width end,
                         set = function(_, val)
                             NephUI.db.profile.powerBar.width = val
@@ -198,62 +199,6 @@ local function CreateResourceBarOptions()
                         end,
                         set = function(_, r, g, b, a)
                             NephUI.db.profile.powerBar.borderColor = { r, g, b, a }
-                            NephUI:UpdatePowerBar()
-                        end,
-                    },
-                    
-                    colorsHeader = {
-                        type = "header",
-                        name = "Colors",
-                        order = 25,
-                    },
-                    useClassColor = {
-                        type = "toggle",
-                        name = "Use Class Color",
-                        desc = "Use your class color instead of custom color",
-                        order = 26,
-                        width = "normal",
-                        get = function() return NephUI.db.profile.powerBar.useClassColor end,
-                        set = function(_, val)
-                            NephUI.db.profile.powerBar.useClassColor = val
-                            NephUI:UpdatePowerBar()
-                        end,
-                    },
-                    barColor = {
-                        type = "color",
-                        name = "Custom Color",
-                        desc = "Used when class color is disabled",
-                        order = 27,
-                        width = "normal",
-                        hasAlpha = true,
-                        get = function()
-                            local c = NephUI.db.profile.powerBar.color
-                            if c then
-                                return c[1], c[2], c[3], c[4] or 1
-                            end
-                            return 1, 1, 1, 1
-                        end,
-                        set = function(_, r, g, b, a)
-                            NephUI.db.profile.powerBar.color = { r, g, b, a }
-                            NephUI:UpdatePowerBar()
-                        end,
-                    },
-                    bgColor = {
-                        type = "color",
-                        name = "Background Color",
-                        desc = "Color of the bar background",
-                        order = 28,
-                        width = "normal",
-                        hasAlpha = true,
-                        get = function()
-                            local c = NephUI.db.profile.powerBar.bgColor
-                            if c then
-                                return c[1], c[2], c[3], c[4] or 1
-                            end
-                            return 0.15, 0.15, 0.15, 1
-                        end,
-                        set = function(_, r, g, b, a)
-                            NephUI.db.profile.powerBar.bgColor = { r, g, b, a }
                             NephUI:UpdatePowerBar()
                         end,
                     },
@@ -549,62 +494,6 @@ local function CreateResourceBarOptions()
                         end,
                     },
                     
-                    colorsHeader = {
-                        type = "header",
-                        name = "Colors",
-                        order = 25,
-                    },
-                    useClassColor = {
-                        type = "toggle",
-                        name = "Use Class Color",
-                        desc = "Use your class color instead of resource color",
-                        order = 26,
-                        width = "normal",
-                        get = function() return NephUI.db.profile.secondaryPowerBar.useClassColor end,
-                        set = function(_, val)
-                            NephUI.db.profile.secondaryPowerBar.useClassColor = val
-                            NephUI:UpdateSecondaryPowerBar()
-                        end,
-                    },
-                    barColor = {
-                        type = "color",
-                        name = "Custom Color",
-                        desc = "Used when class color is disabled",
-                        order = 27,
-                        width = "normal",
-                        hasAlpha = true,
-                        get = function()
-                            local c = NephUI.db.profile.secondaryPowerBar.color
-                            if c then
-                                return c[1], c[2], c[3], c[4] or 1
-                            end
-                            return 1, 1, 1, 1
-                        end,
-                        set = function(_, r, g, b, a)
-                            NephUI.db.profile.secondaryPowerBar.color = { r, g, b, a }
-                            NephUI:UpdateSecondaryPowerBar()
-                        end,
-                    },
-                    bgColor = {
-                        type = "color",
-                        name = "Background Color",
-                        desc = "Color of the bar background",
-                        order = 28,
-                        width = "normal",
-                        hasAlpha = true,
-                        get = function()
-                            local c = NephUI.db.profile.secondaryPowerBar.bgColor
-                            if c then
-                                return c[1], c[2], c[3], c[4] or 1
-                            end
-                            return 0.15, 0.15, 0.15, 1
-                        end,
-                        set = function(_, r, g, b, a)
-                            NephUI.db.profile.secondaryPowerBar.bgColor = { r, g, b, a }
-                            NephUI:UpdateSecondaryPowerBar()
-                        end,
-                    },
-                    
                     displayHeader = {
                         type = "header",
                         name = "Display Options",
@@ -622,6 +511,18 @@ local function CreateResourceBarOptions()
                             NephUI:UpdateSecondaryPowerBar()
                         end,
                     },
+                    showManaAsPercent = {
+                        type = "toggle",
+                        name = "Show Mana as Percent",
+                        desc = "Display mana as percentage instead of raw value for mana-based secondary resources",
+                        order = 31.5,
+                        width = "normal",
+                        get = function() return NephUI.db.profile.secondaryPowerBar.showManaAsPercent end,
+                        set = function(_, val)
+                            NephUI.db.profile.secondaryPowerBar.showManaAsPercent = val
+                            NephUI:UpdateSecondaryPowerBar()
+                        end,
+                    },
                     showTicks = {
                         type = "toggle",
                         name = "Show Ticks",
@@ -631,6 +532,21 @@ local function CreateResourceBarOptions()
                         get = function() return NephUI.db.profile.secondaryPowerBar.showTicks end,
                         set = function(_, val)
                             NephUI.db.profile.secondaryPowerBar.showTicks = val
+                            NephUI:UpdateSecondaryPowerBar()
+                        end,
+                    },
+                    hideWhenMana = {
+                        type = "toggle",
+                        name = "Hide Bar When Mana",
+                        desc = "Hide the secondary bar entirely when the current power is mana",
+                        order = 32.3,
+                        width = "normal",
+                        get = function() return NephUI.db.profile.secondaryPowerBar.hideWhenMana end,
+                        set = function(_, val)
+                            if InCombatLockdown() then
+                                return
+                            end
+                            NephUI.db.profile.secondaryPowerBar.hideWhenMana = val
                             NephUI:UpdateSecondaryPowerBar()
                         end,
                     },
@@ -736,6 +652,421 @@ local function CreateResourceBarOptions()
                         get = function() return NephUI.db.profile.secondaryPowerBar.runeTimerTextY end,
                         set = function(_, val)
                             NephUI.db.profile.secondaryPowerBar.runeTimerTextY = val
+                            NephUI:UpdateSecondaryPowerBar()
+                        end,
+                    },
+                },
+            },
+            colors = {
+                type = "group",
+                name = "Colors",
+                order = 3,
+                args = {
+                    useClassColor = {
+                        type = "toggle",
+                        name = "Use Class Color",
+                        desc = "Use your class color for resource bars instead of power type colors",
+                        width = "full",
+                        order = 1,
+                        get = function() return NephUI.db.profile.powerTypeColors.useClassColor end,
+                        set = function(_, val)
+                            NephUI.db.profile.powerTypeColors.useClassColor = val
+                            NephUI:UpdatePowerBar()
+                            NephUI:UpdateSecondaryPowerBar()
+                        end,
+                    },
+                    backgroundHeader = {
+                        type = "header",
+                        name = "Global Background Colors",
+                        order = 2,
+                    },
+                    primaryBgColor = {
+                        type = "color",
+                        name = "Primary Bar Background",
+                        desc = "Background color for primary power bars",
+                        order = 3,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.powerBar.bgColor
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 0.15, 0.15, 0.15, 1
+                        end,
+                        set = function(_, r, g, b, a)
+                            NephUI.db.profile.powerBar.bgColor = { r, g, b, a }
+                            NephUI:UpdatePowerBar()
+                        end,
+                    },
+                    secondaryBgColor = {
+                        type = "color",
+                        name = "Secondary Bar Background",
+                        desc = "Background color for secondary power bars",
+                        order = 4,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.secondaryPowerBar.bgColor
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 0.15, 0.15, 0.15, 1
+                        end,
+                        set = function(_, r, g, b, a)
+                            NephUI.db.profile.secondaryPowerBar.bgColor = { r, g, b, a }
+                            NephUI:UpdateSecondaryPowerBar()
+                        end,
+                    },
+                    primaryHeader = {
+                        type = "header",
+                        name = "Primary Power Types",
+                        order = 10,
+                    },
+                    manaColor = {
+                        type = "color",
+                        name = "Mana",
+                        desc = "Color for mana bars",
+                        order = 11,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.powerTypeColors.colors[Enum.PowerType.Mana]
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 0.00, 0.00, 1.00, 1.0
+                        end,
+                        set = function(_, r, g, b, a)
+                            NephUI.db.profile.powerTypeColors.colors[Enum.PowerType.Mana] = { r, g, b, a }
+                            NephUI:UpdatePowerBar()
+                        end,
+                    },
+                    rageColor = {
+                        type = "color",
+                        name = "Rage",
+                        desc = "Color for rage bars",
+                        order = 12,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.powerTypeColors.colors[Enum.PowerType.Rage]
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 1.00, 0.00, 0.00, 1.0
+                        end,
+                        set = function(_, r, g, b, a)
+                            NephUI.db.profile.powerTypeColors.colors[Enum.PowerType.Rage] = { r, g, b, a }
+                            NephUI:UpdatePowerBar()
+                        end,
+                    },
+                    focusColor = {
+                        type = "color",
+                        name = "Focus",
+                        desc = "Color for focus bars",
+                        order = 13,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.powerTypeColors.colors[Enum.PowerType.Focus]
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 1.00, 0.50, 0.25, 1.0
+                        end,
+                        set = function(_, r, g, b, a)
+                            NephUI.db.profile.powerTypeColors.colors[Enum.PowerType.Focus] = { r, g, b, a }
+                            NephUI:UpdatePowerBar()
+                        end,
+                    },
+                    energyColor = {
+                        type = "color",
+                        name = "Energy",
+                        desc = "Color for energy bars",
+                        order = 14,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.powerTypeColors.colors[Enum.PowerType.Energy]
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 1.00, 1.00, 0.00, 1.0
+                        end,
+                        set = function(_, r, g, b, a)
+                            NephUI.db.profile.powerTypeColors.colors[Enum.PowerType.Energy] = { r, g, b, a }
+                            NephUI:UpdatePowerBar()
+                        end,
+                    },
+                    runicPowerColor = {
+                        type = "color",
+                        name = "Runic Power",
+                        desc = "Color for runic power bars",
+                        order = 15,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.powerTypeColors.colors[Enum.PowerType.RunicPower]
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 0.00, 0.82, 1.00, 1.0
+                        end,
+                        set = function(_, r, g, b, a)
+                            NephUI.db.profile.powerTypeColors.colors[Enum.PowerType.RunicPower] = { r, g, b, a }
+                            NephUI:UpdatePowerBar()
+                        end,
+                    },
+                    lunarPowerColor = {
+                        type = "color",
+                        name = "Astral Power",
+                        desc = "Color for astral power bars",
+                        order = 16,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.powerTypeColors.colors[Enum.PowerType.LunarPower]
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 0.30, 0.52, 0.90, 1.0
+                        end,
+                        set = function(_, r, g, b, a)
+                            NephUI.db.profile.powerTypeColors.colors[Enum.PowerType.LunarPower] = { r, g, b, a }
+                            NephUI:UpdatePowerBar()
+                        end,
+                    },
+                    furyColor = {
+                        type = "color",
+                        name = "Fury",
+                        desc = "Color for fury bars",
+                        order = 17,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.powerTypeColors.colors[Enum.PowerType.Fury]
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 0.79, 0.26, 0.99, 1.0
+                        end,
+                        set = function(_, r, g, b, a)
+                            NephUI.db.profile.powerTypeColors.colors[Enum.PowerType.Fury] = { r, g, b, a }
+                            NephUI:UpdatePowerBar()
+                        end,
+                    },
+                    maelstromColor = {
+                        type = "color",
+                        name = "Maelstrom",
+                        desc = "Color for maelstrom bars",
+                        order = 18,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.powerTypeColors.colors[Enum.PowerType.Maelstrom]
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 0.00, 0.50, 1.00, 1.0
+                        end,
+                        set = function(_, r, g, b, a)
+                            NephUI.db.profile.powerTypeColors.colors[Enum.PowerType.Maelstrom] = { r, g, b, a }
+                            NephUI:UpdatePowerBar()
+                        end,
+                    },
+                    secondaryHeader = {
+                        type = "header",
+                        name = "Secondary Power Types",
+                        order = 20,
+                    },
+                    runesColor = {
+                        type = "color",
+                        name = "Runes",
+                        desc = "Color for rune bars",
+                        order = 21,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.powerTypeColors.colors[Enum.PowerType.Runes]
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 0.77, 0.12, 0.23, 1.0
+                        end,
+                        set = function(_, r, g, b, a)
+                            NephUI.db.profile.powerTypeColors.colors[Enum.PowerType.Runes] = { r, g, b, a }
+                            NephUI:UpdateSecondaryPowerBar()
+                        end,
+                    },
+                    soulFragmentsColor = {
+                        type = "color",
+                        name = "Soul Fragments",
+                        desc = "Color for soul fragment bars",
+                        order = 22,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.powerTypeColors.colors["SOUL"]
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 0.64, 0.19, 0.79, 1.0
+                        end,
+                        set = function(_, r, g, b, a)
+                            NephUI.db.profile.powerTypeColors.colors["SOUL"] = { r, g, b, a }
+                            NephUI:UpdateSecondaryPowerBar()
+                        end,
+                    },
+                    comboPointsColor = {
+                        type = "color",
+                        name = "Combo Points",
+                        desc = "Color for combo point bars",
+                        order = 23,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.powerTypeColors.colors[Enum.PowerType.ComboPoints]
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 1.00, 0.96, 0.41, 1.0
+                        end,
+                        set = function(_, r, g, b, a)
+                            NephUI.db.profile.powerTypeColors.colors[Enum.PowerType.ComboPoints] = { r, g, b, a }
+                            NephUI:UpdateSecondaryPowerBar()
+                        end,
+                    },
+                    essenceColor = {
+                        type = "color",
+                        name = "Essence",
+                        desc = "Color for essence bars",
+                        order = 24,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.powerTypeColors.colors[Enum.PowerType.Essence]
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 0.20, 0.58, 0.50, 1.0
+                        end,
+                        set = function(_, r, g, b, a)
+                            NephUI.db.profile.powerTypeColors.colors[Enum.PowerType.Essence] = { r, g, b, a }
+                            NephUI:UpdateSecondaryPowerBar()
+                        end,
+                    },
+                    arcaneChargesColor = {
+                        type = "color",
+                        name = "Arcane Charges",
+                        desc = "Color for arcane charge bars",
+                        order = 25,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.powerTypeColors.colors[Enum.PowerType.ArcaneCharges]
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 0.20, 0.60, 1.00, 1.0
+                        end,
+                        set = function(_, r, g, b, a)
+                            NephUI.db.profile.powerTypeColors.colors[Enum.PowerType.ArcaneCharges] = { r, g, b, a }
+                            NephUI:UpdateSecondaryPowerBar()
+                        end,
+                    },
+                    staggerColor = {
+                        type = "color",
+                        name = "Stagger",
+                        desc = "Color for stagger bars (dynamic coloring in-game)",
+                        order = 26,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.powerTypeColors.colors["STAGGER"]
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 1.00, 0.42, 0.42, 1.0
+                        end,
+                        set = function(_, r, g, b, a)
+                            NephUI.db.profile.powerTypeColors.colors["STAGGER"] = { r, g, b, a }
+                            NephUI:UpdateSecondaryPowerBar()
+                        end,
+                    },
+                    chiColor = {
+                        type = "color",
+                        name = "Chi",
+                        desc = "Color for chi bars",
+                        order = 27,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.powerTypeColors.colors[Enum.PowerType.Chi]
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 0.00, 1.00, 0.59, 1.0
+                        end,
+                        set = function(_, r, g, b, a)
+                            NephUI.db.profile.powerTypeColors.colors[Enum.PowerType.Chi] = { r, g, b, a }
+                            NephUI:UpdateSecondaryPowerBar()
+                        end,
+                    },
+                    holyPowerColor = {
+                        type = "color",
+                        name = "Holy Power",
+                        desc = "Color for holy power bars",
+                        order = 28,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.powerTypeColors.colors[Enum.PowerType.HolyPower]
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 0.95, 0.90, 0.60, 1.0
+                        end,
+                        set = function(_, r, g, b, a)
+                            NephUI.db.profile.powerTypeColors.colors[Enum.PowerType.HolyPower] = { r, g, b, a }
+                            NephUI:UpdateSecondaryPowerBar()
+                        end,
+                    },
+                    soulShardsColor = {
+                        type = "color",
+                        name = "Soul Shards",
+                        desc = "Color for soul shard bars",
+                        order = 29,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.powerTypeColors.colors[Enum.PowerType.SoulShards]
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 0.58, 0.51, 0.79, 1.0
+                        end,
+                        set = function(_, r, g, b, a)
+                            NephUI.db.profile.powerTypeColors.colors[Enum.PowerType.SoulShards] = { r, g, b, a }
+                            NephUI:UpdateSecondaryPowerBar()
+                        end,
+                    },
+                    maelstromWeaponColor = {
+                        type = "color",
+                        name = "Maelstrom Weapon",
+                        desc = "Color for maelstrom weapon bars",
+                        order = 30,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.powerTypeColors.colors["MAELSTROM_WEAPON"]
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 0.00, 0.50, 1.00, 1.0
+                        end,
+                        set = function(_, r, g, b, a)
+                            NephUI.db.profile.powerTypeColors.colors["MAELSTROM_WEAPON"] = { r, g, b, a }
                             NephUI:UpdateSecondaryPowerBar()
                         end,
                     },

@@ -12,19 +12,167 @@ local ResolveFrameName = UF.ResolveFrameName
 local GetPowerBarDB = UF.GetPowerBarDB
 local FetchUnitColor = UF.FetchUnitColor
 local FetchNameTextColor = UF.FetchNameTextColor
-local UpdateTargetAuras = UF.UpdateTargetAuras
+local UpdateUnitAuras = UF.UpdateUnitAuras
 local UpdateUnitFramePowerBar = UF.UpdateUnitFramePowerBar
+
+-- Some Blizzard APIs can return "secret" values that error on comparison.
+-- Use a guarded helper before doing string comparisons.
+local function IsSafeNonEmptyString(value)
+    if type(value) ~= "string" then
+        return false
+    end
+    local ok, isNonEmpty = pcall(function()
+        return value ~= ""
+    end)
+    return ok and isNonEmpty
+end
+
+-- Trim a UTF-8 string to a max character length (0 or nil keeps full name)
+local function TruncateNameToLimit(name, maxLength)
+    if not IsSafeNonEmptyString(name) then
+        return name
+    end
+
+    local limit = tonumber(maxLength)
+    if not limit or limit <= 0 then
+        return name
+    end
+
+    limit = math.floor(limit)
+    if limit <= 0 then
+        return name
+    end
+
+    if utf8 and utf8.len and utf8.sub then
+        local length = utf8.len(name)
+        if length and length > limit then
+            local truncated = utf8.sub(name, 1, limit)
+            if truncated then
+                return truncated
+            end
+        end
+    end
+
+    if #name > limit then
+        return string.sub(name, 1, limit)
+    end
+
+    return name
+end
+
+-- Client build helpers so we can adapt between retail (TWW) and Midnight beta
+local BUILD_NUMBER = tonumber((select(4, GetBuildInfo()))) or 0
+local IS_MIDNIGHT_OR_LATER = BUILD_NUMBER >= 120000
+
+-- Safely fetch health percent across API variants (retail vs Midnight)
+local function SafeUnitHealthPercent(unit, includeAbsorbs, includePredicted)
+    -- Midnight+: use the native helper that understands prediction curves
+    if IS_MIDNIGHT_OR_LATER and type(UnitHealthPercent) == "function" then
+        local ok, pct
+
+        -- Modern signature expects a curve object; fallback to boolean then bare call
+        if CurveConstants and CurveConstants.ScaleTo100 then
+            ok, pct = pcall(UnitHealthPercent, unit, includePredicted, CurveConstants.ScaleTo100)
+        else
+            ok, pct = pcall(UnitHealthPercent, unit, includePredicted, true)
+        end
+
+        if (not ok or pct == nil) then
+            ok, pct = pcall(UnitHealthPercent, unit, includePredicted)
+        end
+
+        if ok and pct ~= nil then
+            return pct
+        end
+    end
+
+    -- Retail fallback: compute from current/max (optionally including absorbs)
+    if UnitHealth and UnitHealthMax then
+        local cur = UnitHealth(unit)
+        local max = UnitHealthMax(unit)
+        if includeAbsorbs and UnitGetTotalAbsorbs then
+            cur = (cur or 0) + (UnitGetTotalAbsorbs(unit) or 0)
+        end
+        if cur and max and max > 0 then
+            local pct = (cur / max) * 100
+            return math.min(100, math.max(0, pct))
+        end
+    end
+
+    return nil
+end
+
+-- Update leader/assistant indicator
+local function UpdateLeaderIndicator(unitFrame, unit, DB)
+    if not unitFrame or not DB or not DB.LeaderIndicator then return end
+    
+    local LeaderDB = DB.LeaderIndicator
+    if not unitFrame.leaderIndicator then return end
+    
+    if LeaderDB.Enabled then
+        -- Check if unit is group leader or assistant
+        local isLeader = UnitIsGroupLeader(unit)
+        local isAssistant = UnitIsGroupAssistant(unit)
+        
+        if isLeader or isAssistant then
+            unitFrame.leaderIndicator:Show()
+        else
+            unitFrame.leaderIndicator:Hide()
+        end
+    else
+        unitFrame.leaderIndicator:Hide()
+    end
+end
+
+-- Update status indicators (combat and resting)
+local function UpdateStatusIndicators(unitFrame, DB)
+    if not unitFrame or not DB or not DB.StatusIndicators then return end
+    
+    local StatusIndicatorsDB = DB.StatusIndicators
+    
+    -- Update combat indicator
+    if unitFrame.combatIndicator and StatusIndicatorsDB.Combat then
+        local CombatDB = StatusIndicatorsDB.Combat
+        if CombatDB.Enabled then
+            local inCombat = UnitAffectingCombat("player")
+            if inCombat then
+                unitFrame.combatIndicator:Show()
+            else
+                unitFrame.combatIndicator:Hide()
+            end
+        else
+            unitFrame.combatIndicator:Hide()
+        end
+    end
+    
+    -- Update resting indicator
+    if unitFrame.restingIndicator and StatusIndicatorsDB.Resting then
+        local RestingDB = StatusIndicatorsDB.Resting
+        if RestingDB.Enabled then
+            local isResting = IsResting()
+            local inCombat = UnitAffectingCombat("player")
+            -- Show resting indicator only when resting and not in combat
+            if isResting and not inCombat then
+                unitFrame.restingIndicator:Show()
+            else
+                unitFrame.restingIndicator:Hide()
+            end
+        else
+            unitFrame.restingIndicator:Hide()
+        end
+    end
+end
 
 -- Update unit frame event handler
 local function UpdateUnitFrame(self, event, eventUnit, ...)
     local unit = self.unit
     if not unit or not UnitExists(unit) then return end
     
-    -- Handle UNIT_AURA events for target frame
+    -- Handle UNIT_AURA events for player, focus, and target frames
     if event == "UNIT_AURA" then
-        if unit == "target" and eventUnit == "target" then
-            if UpdateTargetAuras then
-                UpdateTargetAuras(self)
+        if (unit == "player" or unit == "focus" or unit == "target") and eventUnit == unit then
+            if UpdateUnitAuras then
+                UpdateUnitAuras(self)
             end
         end
         return
@@ -38,10 +186,13 @@ local function UpdateUnitFrame(self, event, eventUnit, ...)
     end
         
     -- If event has a unit parameter, only update if it matches our unit
-    if eventUnit and eventUnit ~= unit then
-        -- For events like UNIT_HEALTH, UNIT_NAME_UPDATE, check if it's for our unit
-        if event and (event:match("^UNIT_") and eventUnit ~= unit) then
-            return
+    -- Inline targettarget on the target frame needs to react to targettarget events
+    local isInlineTargetTargetEvent = (unit == "target" and eventUnit == "targettarget")
+    if eventUnit and eventUnit ~= unit and not isInlineTargetTargetEvent then
+        if event and event:match("^UNIT_") and eventUnit ~= unit then
+            if not (unit == "targettarget" and (event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH")) then
+                return
+            end
         end
     end
         
@@ -69,7 +220,7 @@ local function UpdateUnitFrame(self, event, eventUnit, ...)
         if isUnitDead then
             self.HealthText:SetText("Dead")
         else
-            local unitHealthPercent = UnitHealthPercent(unit, false, true) or 0
+            local unitHealthPercent = SafeUnitHealthPercent(unit, false, true) or 0
             local displayStyle = DB.Tags and DB.Tags.Health and DB.Tags.Health.DisplayStyle
             -- Migrate old DisplayPercent setting
             if displayStyle == nil then
@@ -94,12 +245,25 @@ local function UpdateUnitFrame(self, event, eventUnit, ...)
     end
     
     if self.NameText then
+        local NameDB = (DB.Tags and DB.Tags.Name) or {}
         local statusColorR, statusColorG, statusColorB = FetchNameTextColor(unit, DB, GeneralDB)
         self.NameText:SetTextColor(statusColorR, statusColorG, statusColorB)
         -- Safely get unit name (may be secret value in combat)
         local unitName = UnitName(unit)
         if type(unitName) == "string" then
-            self.NameText:SetText(unitName)
+            local finalName = TruncateNameToLimit(unitName, NameDB.MaxLength)
+            if unit == "target" and NameDB.InlineTargetTarget then
+                -- Force inline targettarget separator to white so it ignores custom/status text colors
+                local separator = NameDB.TargetTargetSeparator or " » "
+                local coloredSeparator = "|cFFFFFFFF" .. separator .. "|r"
+                local hasTargetTarget = UnitExists("targettarget")
+                local targetTargetName = hasTargetTarget and UnitName("targettarget")
+                -- Allow showing whatever name we get back (even if it's empty/unknown) for testing
+                if type(targetTargetName) == "string" then
+                    finalName = finalName .. coloredSeparator .. TruncateNameToLimit(targetTargetName, NameDB.MaxLength)
+                end
+            end
+            self.NameText:SetText(finalName)
         else
             -- If secret value, keep existing text or use empty string
             self.NameText:SetText("")
@@ -158,9 +322,19 @@ local function UpdateUnitFrame(self, event, eventUnit, ...)
         end
     end
     
-    -- Update target auras if this is the target frame (always update, not just on specific events)
-    if unit == "target" and UpdateTargetAuras then
-        UpdateTargetAuras(self)
+    -- Update leader indicator (player frame only)
+    if unit == "player" and DB.LeaderIndicator then
+        UpdateLeaderIndicator(self, unit, DB)
+    end
+    
+    -- Update status indicators (player frame only)
+    if unit == "player" then
+        UpdateStatusIndicators(self, DB)
+    end
+    
+    -- Update unit auras if this is a player, focus, or target frame (always update, not just on specific events)
+    if (unit == "player" or unit == "focus" or unit == "target") and UpdateUnitAuras then
+        UpdateUnitAuras(self)
     end
 end
 
@@ -179,17 +353,38 @@ function UF:UpdateUnitFrame(unit)
     local DB = db[dbUnit]
     local GeneralDB = db.General
     if not DB then return end
-    
+
+    if not unit then return end
     local frameName = ResolveFrameName(unit)
     local unitFrame = _G[frameName]
     if not unitFrame then return end
     
-    if not DB.Enabled then
+    local shouldHideUnitFrame = (not DB.Enabled)
+
+    if shouldHideUnitFrame then
         unitFrame:Hide()
         unitFrame:UnregisterAllEvents()
+        if unitFrame.__nephuiUnitWatchActive then
+            UnregisterUnitWatch(unitFrame)
+            unitFrame.__nephuiUnitWatchActive = nil
+        end
+        unitFrame:SetScript("OnEvent", nil)
+        unitFrame:SetScript("OnEnter", nil)
+        unitFrame:SetScript("OnLeave", nil)
         return
     else
-        unitFrame:Show()
+        if unit:match("^boss%d+$") and NephUI.UnitFrames.BossPreviewMode then
+            -- In boss preview mode, unregister unit watch and force show
+            UnregisterUnitWatch(unitFrame)
+            unitFrame.__nephuiUnitWatchActive = false
+            unitFrame:Show()
+        else
+            -- Normal mode: ensure unit watch is active
+            UnregisterUnitWatch(unitFrame)
+            RegisterUnitWatch(unitFrame, false)
+            unitFrame.__nephuiUnitWatchActive = true
+            -- Don't force show - let UnitWatch handle visibility
+        end
     end
     
     unitFrame:SetSize(DB.Frame.Width, DB.Frame.Height)
@@ -214,6 +409,10 @@ function UF:UpdateUnitFrame(unit)
     })
     unitFrame:SetBackdropColor(unpack(DB.Frame.BGColor))
     unitFrame:SetBackdropBorderColor(0, 0, 0, 1)
+    
+    if self.UpdateMouseoverHighlight then
+        self.UpdateMouseoverHighlight(unitFrame)
+    end
     
     local unitHealthBar = unitFrame.healthBar
     local unitHealthBG = unitHealthBar.BG
@@ -290,6 +489,85 @@ function UF:UpdateUnitFrame(unit)
         unitFrame.PowerText:Hide()
     end
     
+    -- Update leader indicator (player frame only)
+    if unit == "player" and DB.LeaderIndicator then
+        local LeaderDB = DB.LeaderIndicator
+            if not unitFrame.leaderIndicator then
+                -- Create frame and texture
+                local leaderFrame = CreateFrame("Frame", nil, unitFrame)
+                leaderFrame:SetFrameLevel(unitFrame:GetFrameLevel() + 5)
+                leaderFrame:SetFrameStrata("HIGH")
+                local leaderTexture = leaderFrame:CreateTexture(nil, "OVERLAY")
+                leaderTexture:SetAllPoints()
+                leaderTexture:SetTexture("Interface\\GroupFrame\\UI-Group-LeaderIcon")
+            unitFrame.leaderIndicator = leaderFrame
+            unitFrame.leaderIndicator.texture = leaderTexture
+        end
+        
+        unitFrame.leaderIndicator:ClearAllPoints()
+        unitFrame.leaderIndicator:SetSize(LeaderDB.Size or 15, LeaderDB.Size or 15)
+        unitFrame.leaderIndicator:SetPoint(LeaderDB.AnchorFrom or "RIGHT", unitFrame, LeaderDB.AnchorTo or "TOPRIGHT", LeaderDB.OffsetX or -3, LeaderDB.OffsetY or 0)
+    end
+    
+    -- Update status indicators (player frame only)
+    if unit == "player" and DB.StatusIndicators then
+        local StatusIndicatorsDB = DB.StatusIndicators
+        
+        -- Update combat indicator
+        if StatusIndicatorsDB.Combat then
+            local CombatDB = StatusIndicatorsDB.Combat
+            if not unitFrame.combatIndicator then
+                -- Create frame and texture
+                local combatFrame = CreateFrame("Frame", nil, unitFrame)
+                combatFrame:SetFrameLevel(unitFrame:GetFrameLevel() + 5)
+                local combatTexture = combatFrame:CreateTexture(nil, "OVERLAY")
+                combatTexture:SetAllPoints()
+                unitFrame.combatIndicator = combatFrame
+                unitFrame.combatIndicator.texture = combatTexture
+            end
+            
+            unitFrame.combatIndicator:ClearAllPoints()
+            unitFrame.combatIndicator:SetSize(CombatDB.Size or 24, CombatDB.Size or 24)
+            unitFrame.combatIndicator:SetPoint(CombatDB.AnchorFrom or "CENTER", unitFrame, CombatDB.AnchorTo or "TOPLEFT", CombatDB.OffsetX or 3, CombatDB.OffsetY or -3)
+            
+            local textureType = CombatDB.Texture or "DEFAULT"
+            if textureType == "DEFAULT" then
+                unitFrame.combatIndicator.texture:SetTexture("Interface\\CharacterFrame\\UI-StateIcon")
+                unitFrame.combatIndicator.texture:SetTexCoord(0.5, 1, 0, 0.49)
+            else
+                unitFrame.combatIndicator.texture:SetTexture(textureType)
+                unitFrame.combatIndicator.texture:SetTexCoord(0, 1, 0, 1)
+            end
+        end
+        
+        -- Update resting indicator
+        if StatusIndicatorsDB.Resting then
+            local RestingDB = StatusIndicatorsDB.Resting
+            if not unitFrame.restingIndicator then
+                -- Create frame and texture
+                local restingFrame = CreateFrame("Frame", nil, unitFrame)
+                restingFrame:SetFrameLevel(unitFrame:GetFrameLevel() + 5)
+                local restingTexture = restingFrame:CreateTexture(nil, "OVERLAY")
+                restingTexture:SetAllPoints()
+                unitFrame.restingIndicator = restingFrame
+                unitFrame.restingIndicator.texture = restingTexture
+            end
+            
+            unitFrame.restingIndicator:ClearAllPoints()
+            unitFrame.restingIndicator:SetSize(RestingDB.Size or 24, RestingDB.Size or 24)
+            unitFrame.restingIndicator:SetPoint(RestingDB.AnchorFrom or "CENTER", unitFrame, RestingDB.AnchorTo or "TOPLEFT", RestingDB.OffsetX or 3, RestingDB.OffsetY or -3)
+            
+            local textureType = RestingDB.Texture or "DEFAULT"
+            if textureType == "DEFAULT" then
+                unitFrame.restingIndicator.texture:SetTexture("Interface\\CharacterFrame\\UI-StateIcon")
+                unitFrame.restingIndicator.texture:SetTexCoord(0, 0.5, 0, 0.421875)
+            else
+                unitFrame.restingIndicator.texture:SetTexture(textureType)
+                unitFrame.restingIndicator.texture:SetTexCoord(0, 1, 0, 1)
+            end
+        end
+    end
+    
     -- Update alternate power bar first (for player only) - handled by AlternatePowerBar.lua
     -- Alternate power bar takes precedence over regular power bar for health bar positioning
     if unit == "player" then
@@ -323,6 +601,10 @@ function UF:UpdateUnitFrame(unit)
         unitFrame:RegisterEvent("UNIT_NAME_UPDATE")
         unitFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
         unitFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
+        -- Keep target name updated when its target changes (for inline targettarget)
+        if unit == "target" then
+            unitFrame:RegisterEvent("UNIT_TARGET")
+        end
         -- Register power events for power text updates
         if unit == "player" or unit == "target" or unit == "focus" or unit:match("^boss%d+$") then
             unitFrame:RegisterEvent("UNIT_POWER_UPDATE")
@@ -333,11 +615,25 @@ function UF:UpdateUnitFrame(unit)
             unitFrame:RegisterEvent("UNIT_AURA")
         end
         -- Special event for targettarget: listen to when target's target changes
+        -- targettarget frames need health updates for their dynamic unit
         if unit == "targettarget" then
             unitFrame:RegisterEvent("UNIT_TARGET")
+            unitFrame:RegisterEvent("UNIT_HEALTH")
+            unitFrame:RegisterEvent("UNIT_MAXHEALTH")
         end
         if unit == "pet" then unitFrame:RegisterEvent("UNIT_PET") end
         if unit == "focus" then unitFrame:RegisterEvent("PLAYER_FOCUS_CHANGED") end
+        -- Status indicator events (player frame only)
+        if unit == "player" then
+            unitFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+            unitFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+            unitFrame:RegisterEvent("PLAYER_UPDATE_RESTING")
+        end
+        -- Leader indicator events (player frame only)
+        if unit == "player" then
+            unitFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
+            unitFrame:RegisterEvent("PARTY_LEADER_CHANGED")
+        end
         unitFrame:SetScript("OnEvent", UpdateUnitFrame)
     else
         unitFrame:SetScript("OnEvent", nil)
@@ -369,15 +665,33 @@ function UF:UpdateUnitFrame(unit)
         end
     end
     
+    -- Update leader indicator (player frame only)
+    if unit == "player" and DB.LeaderIndicator then
+        UpdateLeaderIndicator(unitFrame, unit, DB)
+    end
+    
+    -- Update status indicators (player frame only)
+    if unit == "player" and DB.StatusIndicators then
+        UpdateStatusIndicators(unitFrame, DB)
+    end
+    
     -- Initial update
     UpdateUnitFrame(unitFrame)
     if unitPowerBar and UpdateUnitFramePowerBar then
         UpdateUnitFramePowerBar(unitPowerBar)
     end
     
-    -- Update target auras if this is the target frame
-    if unit == "target" and UpdateTargetAuras then
-        UpdateTargetAuras(unitFrame)
+    -- Update unit auras if this is a player, focus, or target frame
+    if (unit == "player" or unit == "focus" or unit == "target") and UpdateUnitAuras then
+        UpdateUnitAuras(unitFrame)
+    end
+
+    -- Re-apply preview data if in boss preview mode
+    if unit:match("^boss%d+$") and NephUI.UnitFrames.BossPreviewMode then
+        local bossIndex = tonumber(unit:match("^boss(%d+)$"))
+        if bossIndex then
+            NephUI.UnitFrames:ApplyBossPreviewData(unitFrame, bossIndex)
+        end
     end
 end
 

@@ -8,6 +8,40 @@ local LSM = LibStub("LibSharedMedia-3.0")
 
 -- Cache for styled auras to avoid re-styling
 local styledAuras = {}
+local function NeutralizeAtlasTexture(texture)
+    if not texture then return end
+
+    -- Clear existing atlas assignment and keep future atlas calls invisible
+    if texture.SetAtlas then
+        texture:SetAtlas(nil)
+        if not texture.__nuiAtlasNeutralized then
+            texture.__nuiAtlasNeutralized = true
+            hooksecurefunc(texture, "SetAtlas", function(self)
+                if self.SetTexture then
+                    self:SetTexture(nil)
+                end
+                if self.SetAlpha then
+                    self:SetAlpha(0)
+                end
+            end)
+        end
+    end
+
+    if texture.SetTexture then
+        texture:SetTexture(nil)
+    end
+
+    if texture.SetAlpha then
+        texture:SetAlpha(0)
+    end
+end
+
+local function IsEditModeActive()
+    return EditModeManagerFrame and EditModeManagerFrame.editModeActive
+end
+
+-- Re-entrancy guard to prevent recursive processing loops
+BDF._processing = false
 
 -- Create custom border overlay using textures instead of backdrop
 local function CreateAuraBorderOverlay(auraFrame)
@@ -48,6 +82,20 @@ local function CreateAuraBorderOverlay(auraFrame)
     auraFrame.__nephuiBorderOverlay = overlay
 end
 
+local function EnsureAuraTextOverlay(auraFrame)
+    if auraFrame.__nephuiTextOverlay then return auraFrame.__nephuiTextOverlay end
+
+    local overlayParent = auraFrame.__nephuiBorderOverlay or auraFrame
+    local textOverlay = CreateFrame("Frame", nil, auraFrame)
+    textOverlay:SetAllPoints(overlayParent or auraFrame)
+
+    local baseLevel = (overlayParent and overlayParent:GetFrameLevel()) or (auraFrame:GetFrameLevel() or 0)
+    textOverlay:SetFrameLevel(baseLevel + 1)
+    auraFrame.__nephuiTextOverlay = textOverlay
+
+    return textOverlay
+end
+
 -- Apply styling to a single aura frame
 local function EnhanceAuraFrame(auraFrame, config)
     if not auraFrame or not config then return end
@@ -66,31 +114,30 @@ local function EnhanceAuraFrame(auraFrame, config)
     icon:SetSize(iconSize, iconSize)
     
     -- Hide default borders
-    if auraFrame.DebuffBorder then
-        auraFrame.DebuffBorder:SetTexture(nil)
-    end
-    if auraFrame.BuffBorder then
-        auraFrame.BuffBorder:SetTexture(nil)
-    end
-    if auraFrame.TempEnchantBorder then
-        auraFrame.TempEnchantBorder:SetTexture(nil)
-    end
+    NeutralizeAtlasTexture(auraFrame.DebuffBorder)
+    NeutralizeAtlasTexture(auraFrame.BuffBorder)
+    NeutralizeAtlasTexture(auraFrame.TempEnchantBorder)
     
     -- Create our custom border overlay
     CreateAuraBorderOverlay(auraFrame)
+    local textOverlay = EnsureAuraTextOverlay(auraFrame)
     
     -- Style duration text
     if auraFrame.Duration and config.duration then
         local durConfig = config.duration
         
         -- Check if duration text is enabled
-        if durConfig.enabled ~= false then
-            local font = NephUI:GetGlobalFont()
-            
-            auraFrame.Duration:ClearAllPoints()
-            
-            local anchorPoint = durConfig.anchorPoint or "BOTTOM"
-            local offsetX = durConfig.offsetX or 0
+            if durConfig.enabled ~= false then
+                local font = NephUI:GetGlobalFont()
+                
+                auraFrame.Duration:ClearAllPoints()
+                if textOverlay then
+                    auraFrame.Duration:SetParent(textOverlay)
+                end
+                auraFrame.Duration:SetDrawLayer("OVERLAY", 2)
+                
+                local anchorPoint = durConfig.anchorPoint or "BOTTOM"
+                local offsetX = durConfig.offsetX or 0
             local offsetY = durConfig.offsetY or -2
             
             auraFrame.Duration:SetPoint(anchorPoint, icon, anchorPoint, offsetX, offsetY)
@@ -120,6 +167,10 @@ local function EnhanceAuraFrame(auraFrame, config)
             local font = NephUI:GetGlobalFont()
             
             auraFrame.Count:ClearAllPoints()
+            if textOverlay then
+                auraFrame.Count:SetParent(textOverlay)
+            end
+            auraFrame.Count:SetDrawLayer("OVERLAY", 2)
             
             local anchorPoint = countConfig.anchorPoint or "TOPRIGHT"
             local offsetX = countConfig.offsetX or 0
@@ -145,83 +196,54 @@ local function EnhanceAuraFrame(auraFrame, config)
     styledAuras[auraFrame] = true
 end
 
-local function ApplyGridLayout(auraFrames, container, iconSize, layoutConfig)
-    if not auraFrames or not container then return end
-    
-    local db = NephUI.db.profile.buffDebuffFrames
-    if not db then return end
-    
-    iconSize = iconSize or 38
-    
-    -- Use provided layout config, fall back to global layout if type-specific doesn't exist
-    local layout = layoutConfig
-    if not layout or not layout.iconsPerRow then
-        -- Fall back to global layout if type-specific doesn't exist
-        layout = db.layout or {}
-    end
-    
-    -- Convert auraFrames table to array for easier indexing
-    local auraArray = {}
-    for _, aura in pairs(auraFrames) do
-        if aura and aura:IsShown() and not aura.isAuraAnchor then
-            table.insert(auraArray, aura)
-        end
-    end
-    
-    if #auraArray == 0 then return end
-    
-    local iconsPerRow = layout.iconsPerRow or 15
-    local iconSpacing = layout.iconSpacing or 11
-    local rowSpacing = layout.rowSpacing or 1
-    local anchorSide = layout.anchorSide or "TOPRIGHT"
-    
-    -- Clear all points first
-    for _, aura in ipairs(auraArray) do
-        aura:ClearAllPoints()
-    end
-    
-    -- Position each aura relative to container or previous aura
-    local rowAnchors = {} -- Track the first aura in each row
-    
-    for i = 1, #auraArray do
-        local aura = auraArray[i]
-        local rowIndex = math.floor((i - 1) / iconsPerRow)
-        local colIndex = (i - 1) % iconsPerRow
-        
-        if colIndex == 0 then
-            -- First aura in row - anchor to container or previous row
-            if rowIndex == 0 then
-                -- First row - anchor to container
-                aura:SetPoint(anchorSide, container, anchorSide, 0, 0)
-            else
-                -- Subsequent rows - anchor below previous row's first aura
-                local prevRowAnchor = rowAnchors[rowIndex]
-                if prevRowAnchor then
-                    aura:SetPoint("TOPRIGHT", prevRowAnchor, "BOTTOMRIGHT", 0, -rowSpacing)
-                end
-            end
-            rowAnchors[rowIndex + 1] = aura
-        else
-            -- Same row - anchor to previous aura in row
-            local prevAura = auraArray[i - 1]
-            if prevAura then
-                aura:SetPoint("TOPRIGHT", prevAura, "TOPLEFT", -iconSpacing, 0)
-            end
+-- Adjust spacing on Blizzard containers without overriding their layout logic
+local function ApplySpacingOnly(container, config)
+    if not container or not config then return end
+
+    -- Accept either layout table or direct config fields
+    local spacingX = (config.layout and (config.layout.iconSpacing or config.layout.spacing))
+        or config.iconSpacing
+        or config.spacing
+    local spacingY = (config.layout and config.layout.rowSpacing) or config.rowSpacing or spacingX
+
+    if not spacingX then return end
+    -- Avoid fighting Blizzard's edit mode refresh loop
+    if IsEditModeActive() then return end
+
+    -- Retail AuraContainerMixin exposes SetSpacing; guard for older clients
+    if container.SetSpacing then
+        container:SetSpacing(spacingX, spacingY or spacingX)
+        -- Force immediate reflow so slider changes are visible without waiting
+        if container.UpdateGridLayout then
+            container:UpdateGridLayout()
+        elseif container.MarkDirty then
+            container:MarkDirty()
+            if container:Layout() then container:Layout() end
         end
     end
 end
 
 -- Process all buff frames
 local function ProcessBuffFrames()
+    if BDF._processing then return end
+    BDF._processing = true
+
     local db = NephUI.db.profile.buffDebuffFrames
-    if not db or not db.enabled then return end
+    if not db or not db.enabled then
+        BDF._processing = false
+        return
+    end
     
     local buffConfig = db.buffs or {}
-    if buffConfig.enabled == false then return end
+    if buffConfig.enabled == false then
+        BDF._processing = false
+        return
+    end
     
-    if not BuffFrame or not BuffFrame.auraFrames then return end
-    
-    local layoutConfig = buffConfig.layout
+    if not BuffFrame or not BuffFrame.auraFrames then
+        BDF._processing = false
+        return
+    end
     
     -- Hide collapse button
     if BuffFrame.CollapseAndExpandButton then
@@ -234,65 +256,72 @@ local function ProcessBuffFrames()
         EnhanceAuraFrame(auraFrame, buffConfig)
     end
     
-    -- Apply grid layout
-    local iconSize = buffConfig.iconSize or 36
-    ApplyGridLayout(BuffFrame.auraFrames, BuffFrame, iconSize, layoutConfig)
+    -- Let Blizzard handle layout; only adjust spacing if API is available
+    ApplySpacingOnly(BuffFrame.auraContainer or BuffFrame.AuraContainer, buffConfig)
+    BDF._processing = false
 end
 
 -- Process all debuff frames
 local function ProcessDebuffFrames()
+    if BDF._processing then return end
+    BDF._processing = true
+
     local db = NephUI.db.profile.buffDebuffFrames
-    if not db or not db.enabled then return end
+    if not db or not db.enabled then
+        BDF._processing = false
+        return
+    end
     
     local debuffConfig = db.debuffs or {}
-    if debuffConfig.enabled == false then return end
+    if debuffConfig.enabled == false then
+        BDF._processing = false
+        return
+    end
     
-    if not DebuffFrame or not DebuffFrame.auraFrames then return end
-    
-    local layoutConfig = debuffConfig.layout
+    if not DebuffFrame or not DebuffFrame.auraFrames then
+        BDF._processing = false
+        return
+    end
     
     -- Style each debuff frame
     for _, auraFrame in pairs(DebuffFrame.auraFrames) do
         EnhanceAuraFrame(auraFrame, debuffConfig)
     end
     
-    -- Apply grid layout
-    local iconSize = debuffConfig.iconSize or 36
-    ApplyGridLayout(DebuffFrame.auraFrames, DebuffFrame, iconSize, layoutConfig)
+    -- Let Blizzard handle layout; only adjust spacing if API is available
+    ApplySpacingOnly(DebuffFrame.auraContainer or DebuffFrame.AuraContainer, debuffConfig)
+    BDF._processing = false
 end
 
 -- Hook into aura update functions
 local function HookAuraUpdates()
-    -- Hook buff frame updates
-    if BuffFrame and BuffFrame.UpdateAuraButtons then
+    -- Hook buff frame updates once
+    if BuffFrame and BuffFrame.UpdateAuraButtons and not BDF._buffHooked then
         hooksecurefunc(BuffFrame, "UpdateAuraButtons", function()
             C_Timer.After(0.1, function()
                 ProcessBuffFrames()
             end)
         end)
+        BDF._buffHooked = true
     end
     
-    -- Hook debuff frame updates
-    if DebuffFrame and DebuffFrame.UpdateAuraButtons then
+    -- Hook debuff frame updates once
+    if DebuffFrame and DebuffFrame.UpdateAuraButtons and not BDF._debuffHooked then
         hooksecurefunc(DebuffFrame, "UpdateAuraButtons", function()
             C_Timer.After(0.1, function()
                 ProcessDebuffFrames()
             end)
         end)
+        BDF._debuffHooked = true
     end
     
-    -- Hook the generic aura update function if it exists
-    if C_Timer and BuffFrame then
-        local ticker = C_Timer.NewTicker(0.5, function()
-            ProcessBuffFrames()
-            ProcessDebuffFrames()
-        end)
-        BDF._updateTicker = ticker
-    end
+    -- Removed ticker - event-based updates via UpdateAuraButtons hooks should be sufficient
 end
 
 -- Hook edit mode
 local function HookEditMode()
+    if BDF._editModeHooked then return end
+
     if EditModeManagerFrame then
         local function RefreshOnEditMode()
             C_Timer.After(0.2, function()
@@ -309,6 +338,7 @@ local function HookEditMode()
         -- Fallback hooks
         hooksecurefunc(EditModeManagerFrame, "EnterEditMode", RefreshOnEditMode)
         hooksecurefunc(EditModeManagerFrame, "ExitEditMode", RefreshOnEditMode)
+    BDF._editModeHooked = true
     end
 end
 
@@ -329,13 +359,13 @@ end
 -- Refresh all frames
 function BDF:RefreshAll()
     styledAuras = {} -- Clear cache
-    
-    -- Clean up ticker if it exists
+
+    -- Clean up ticker if it exists (legacy cleanup)
     if BDF._updateTicker then
         BDF._updateTicker:Cancel()
         BDF._updateTicker = nil
     end
-    
+
     if NephUI.db.profile.buffDebuffFrames and NephUI.db.profile.buffDebuffFrames.enabled then
         ProcessBuffFrames()
         ProcessDebuffFrames()

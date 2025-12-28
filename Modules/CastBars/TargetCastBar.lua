@@ -8,6 +8,29 @@ if not CastBars then
 end
 
 local CreateBorder = CastBars.CreateBorder
+local ResolveCastIconTexture = CastBars.ResolveCastIconTexture
+local function PixelSnap(value)
+    return math.max(0, math.floor((value or 0) + 0.5))
+end
+local function SetTargetCastBarColor(state)
+    local cfg = NephUI.db and NephUI.db.profile and NephUI.db.profile.targetCastBar
+    if not cfg then return end
+
+    local bar = NephUI.targetCastBar
+    if not bar or not bar.status then return end
+
+    local color
+    if state == "interrupted" then
+        color = cfg.interruptedColor or cfg.color
+    elseif state == "nonInterruptible" then
+        color = cfg.nonInterruptibleColor or cfg.color
+    else
+        color = cfg.interruptibleColor or cfg.color
+    end
+
+    color = color or { 1, 0, 0, 1 }
+    bar.status:SetStatusBarColor(color[1], color[2], color[3], color[4] or 1)
+end
 
 -- TARGET CAST BAR
 
@@ -27,8 +50,7 @@ function CastBars:GetTargetCastBar()
     
     local width = cfg.width or 0
     if width <= 0 then
-        width = anchor:GetWidth() or 200
-        -- anchor:GetWidth() returns pixels, no need to scale
+        width = PixelSnap((anchor.__cdmIconWidth or anchor:GetWidth() or 200) - 2)
     else
         width = NephUI:Scale(width)
     end
@@ -94,14 +116,7 @@ function CastBars:UpdateTargetCastBarLayout()
     
     local width = cfg.width or 0
     if width <= 0 then
-        width = anchor:GetWidth() or 200
-        -- Round down to handle decimal values (e.g., 100.9 -> 100) to prevent overflow
-        width = math.floor(width)
-        
-        -- Apply trim - scale padding first, then subtract from pixel width
-        width = width - NephUI:Scale(2)
-        if width < 0 then width = 0 end
-        -- Width is already in pixels, no need to scale again
+        width = PixelSnap((anchor.__cdmIconWidth or anchor:GetWidth() or 200) - 2)
     else
         width = NephUI:Scale(width)
     end
@@ -114,15 +129,27 @@ function CastBars:UpdateTargetCastBarLayout()
         bar.border:SetPoint("BOTTOMRIGHT", bar, borderOffset, -borderOffset)
     end
     
+    local showIcon = cfg.showIcon ~= false
+    
     -- Icon: left side
     bar.icon:ClearAllPoints()
-    bar.icon:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
-    bar.icon:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 0)
-    -- Use bar height directly (already in pixels from SetHeight)
-    bar.icon:SetWidth(bar:GetHeight())
+    if showIcon then
+        bar.icon:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
+        bar.icon:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 0)
+        -- Use bar height directly (already in pixels from SetHeight)
+        bar.icon:SetWidth(bar:GetHeight())
+        bar.icon:Show()
+    else
+        bar.icon:SetWidth(0)
+        bar.icon:Hide()
+    end
     
     bar.status:ClearAllPoints()
-    bar.status:SetPoint("TOPLEFT", bar.icon, "TOPRIGHT", 0, 0)
+    if showIcon then
+        bar.status:SetPoint("TOPLEFT", bar.icon, "TOPRIGHT", 0, 0)
+    else
+        bar.status:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
+    end
     bar.status:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, 0)
     
     bar.bg:ClearAllPoints()
@@ -143,9 +170,10 @@ function CastBars:UpdateTargetCastBarLayout()
     
     -- Update status bar color
     local color = cfg.color or { 1.0, 0.0, 0.0, 1.0 }
-    local r, g, b, a = color[1], color[2], color[3], color[4] or 1
     
-    bar.status:SetStatusBarColor(r, g, b, a or 1)
+    -- Default to the interruptible color so the bar previews correctly in options
+    local initial = cfg.interruptibleColor or color
+    bar.status:SetStatusBarColor(initial[1], initial[2], initial[3], initial[4] or 1)
     
     -- Text positioning
     bar.spellName:ClearAllPoints()
@@ -190,9 +218,13 @@ function CastBars:HookTargetAndFocusCastBars()
             
             -- Get spell info from the default cast bar
             local spellID = self.spellID
-            if spellID then
-                bar.icon:SetTexture(C_Spell.GetSpellTexture(spellID) or 136243)
+            local iconTexture
+            if ResolveCastIconTexture then
+                iconTexture = ResolveCastIconTexture(self, "target", spellID)
+            elseif spellID and C_Spell and C_Spell.GetSpellTexture then
+                iconTexture = C_Spell.GetSpellTexture(spellID)
             end
+            bar.icon:SetTexture(iconTexture or 136243)
             
             -- Get spell name from the text field
             if self.Text then
@@ -205,6 +237,13 @@ function CastBars:HookTargetAndFocusCastBars()
                 bar.status:SetMinMaxValues(min, max)
                 bar.status:SetValue(self:GetValue() or 0)
             end
+
+            -- Apply proper color based on interrupt state
+            if self.notInterruptible then
+                SetTargetCastBarColor("nonInterruptible")
+            else
+                SetTargetCastBarColor("interruptible")
+            end
             
             bar:Show()
         end)
@@ -214,21 +253,42 @@ function CastBars:HookTargetAndFocusCastBars()
                 NephUI.targetCastBar:Hide()
             end
         end)
+
+        -- React to interruptibility changes and interrupts
+        targetSpellbar:HookScript("OnEvent", function(self, event, unit)
+            if unit ~= "target" then return end
+
+            local cfg = NephUI.db.profile.targetCastBar
+            if not cfg or not cfg.enabled then return end
+
+            if event == "UNIT_SPELLCAST_INTERRUPTED" or event == "UNIT_SPELLCAST_FAILED" then
+                SetTargetCastBarColor("interrupted")
+            elseif event == "UNIT_SPELLCAST_NOT_INTERRUPTIBLE" then
+                SetTargetCastBarColor("nonInterruptible")
+            elseif event == "UNIT_SPELLCAST_INTERRUPTIBLE" or event == "UNIT_SPELLCAST_START" or event == "UNIT_SPELLCAST_CHANNEL_START" then
+                SetTargetCastBarColor("interruptible")
+            end
+        end)
         
-        -- Hook OnUpdate to sync progress and time text
-        -- Use simple format without "s" suffix (just use Blizzard's values directly)
+        -- Hook OnUpdate to sync progress and time text (throttled to 60fps for performance)
+        local lastUpdate = 0
+        local updateThrottle = 1/60 -- 60fps maximum
         targetSpellbar:HookScript("OnUpdate", function(self, elapsed)
             local cfg = NephUI.db.profile.targetCastBar
             if not cfg or not cfg.enabled then return end
-            
+
             local bar = NephUI.targetCastBar
             if not bar or not bar:IsShown() then return end
-            
+
+            lastUpdate = lastUpdate + elapsed
+            if lastUpdate < updateThrottle then return end
+            lastUpdate = 0
+
             local progress = self:GetValue()
             if progress then
                 bar.status:SetValue(progress)
             end
-            
+
             -- Update time text using Blizzard's values directly (avoids math on secret values)
             if bar.timeText and cfg.showTimeText ~= false then
                 local min, max = self:GetMinMaxValues()

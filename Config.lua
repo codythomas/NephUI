@@ -7,18 +7,21 @@ local ResourceBarOptions = ns.CreateResourceBarOptions
 local CastBarOptions = ns.CreateCastBarOptions
 local CustomIconOptions = ns.CreateCustomIconOptions
 local UnitFrameOptions = ns.CreateUnitFrameOptionsGroup
+local PartyFrameOptions = ns.CreatePartyFrameOptions
+local RaidFrameOptions = ns.CreateRaidFrameOptions
 local ProfileOptions = ns.CreateProfileOptions
 local ChatOptions = ns.CreateChatOptions
 local MinimapOptions = ns.CreateMinimapOptions
 local ActionBarOptions = ns.CreateActionBarOptions
 local BuffDebuffFramesOptions = ns.CreateBuffDebuffFramesOptions
-local GetTrackedItemsEntries = ns.GetTrackedItemsEntries
+local QOLOptions = ns.CreateQOLOptions
 
 local function GetViewerOptions()
     return {
         ["EssentialCooldownViewer"] = "Essential Cooldowns",
         ["UtilityCooldownViewer"] = "Utility Cooldowns",
         ["BuffIconCooldownViewer"] = "Buff Icons",
+        ["BuffBarCooldownViewer"] = "Buff Bar",
     }
 end
 
@@ -35,6 +38,565 @@ local function GetChargeAnchorOptions()
         BOTTOMLEFT  = "Bottom Left",
         BOTTOM      = "Bottom",
         BOTTOMRIGHT = "Bottom Right",
+    }
+end
+
+local function CreateBuffBarViewerOptions(order)
+    return {
+        type = "group",
+        name = "Buff Bar",
+        order = order,
+        args = {
+            header = {
+                type = "header",
+                name = "Buff Bar Cooldowns",
+                order = 1,
+            },
+            enabled = {
+                type = "toggle",
+                name = "Enable",
+                width = "full",
+                order = 2,
+                get = function()
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    return cfg.enabled ~= false
+                end,
+                set = function(_, val)
+                    NephUI.db.profile.buffBarViewer.enabled = val
+                    if NephUI.RefreshViewers then
+                        NephUI:RefreshViewers()
+                    end
+                end,
+            },
+            width = {
+                type = "range",
+                name = "Bar Width (0 = Auto Size to Essential Viewer)",
+                desc = "0 = auto width based on the attached viewer.",
+                order = 8,
+                width = "normal",
+                min = 0, max = 1000, step = 1,
+                get = function()
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    return cfg.width or 0
+                end,
+                set = function(_, val)
+                    NephUI.db.profile.buffBarViewer.width = val
+                    if NephUI.RefreshViewers then
+                        NephUI:RefreshViewers()
+                    end
+                end,
+            },
+            height = {
+                type = "range",
+                name = "Bar Height",
+                order = 9,
+                width = "normal",
+                min = 4, max = 100, step = 1,
+                get = function()
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    return cfg.height or 16
+                end,
+                set = function(_, val)
+                    NephUI.db.profile.buffBarViewer.height = val
+                    if NephUI.RefreshViewers then
+                        NephUI:RefreshViewers()
+                    end
+                end,
+            },
+            texture = {
+                type = "select",
+                name = "Bar Texture",
+                desc = "Texture for buff bars. Blank uses the global texture.",
+                order = 9.2,
+                width = "full",
+                values = function()
+                    local hashTable = LSM:HashTable("statusbar")
+                    local names = {}
+                    for name, _ in pairs(hashTable) do
+                        names[name] = name
+                    end
+                    names[""] = "Use Global"
+                    return names
+                end,
+                get = function()
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    return cfg.texture or ""
+                end,
+                set = function(_, val)
+                    if val == "" then val = nil end
+                    NephUI.db.profile.buffBarViewer.texture = val
+                    if NephUI.RefreshViewers then
+                        NephUI:RefreshViewers()
+                    end
+                end,
+            },
+            bgColor = {
+                type = "color",
+                name = "Bar Background Color",
+                order = 9.3,
+                width = "full",
+                hasAlpha = true,
+                get = function()
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    local c = cfg.bgColor or { 0.1, 0.1, 0.1, 0.7 }
+                    return c[1], c[2], c[3], c[4] or 1
+                end,
+                set = function(_, r, g, b, a)
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    cfg.bgColor = { r, g, b, a or 1 }
+                    NephUI.db.profile.buffBarViewer = cfg
+                    if NephUI.RefreshViewers then
+                        NephUI:RefreshViewers()
+                    end
+                end,
+            },
+            hideIconMask = {
+                type = "toggle",
+                name = "Hide Icon Mask",
+                desc = "Remove the Blizzard mask from the buff icon attached to the bar.",
+                order = 10,
+                width = "full",
+                get = function()
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    return cfg.hideIconMask ~= false
+                end,
+                set = function(_, val)
+                    NephUI.db.profile.buffBarViewer.hideIconMask = val
+                    if NephUI.RefreshViewers then
+                        NephUI:RefreshViewers()
+                    end
+                end,
+            },
+            hideIcon = {
+                type = "toggle",
+                name = "Hide Icon",
+                desc = "Hide the buff bar icon entirely.",
+                order = 10.5,
+                width = "full",
+                get = function()
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    return cfg.hideIcon or false
+                end,
+                set = function(_, val)
+                    NephUI.db.profile.buffBarViewer.hideIcon = val
+                    if NephUI.RefreshViewers then
+                        NephUI:RefreshViewers()
+                    end
+                end,
+            },
+            iconZoom = {
+                type = "range",
+                name = "Icon Zoom",
+                desc = "Crops the buff bar icon edges (higher = more zoom).",
+                order = 11,
+                width = "normal",
+                min = 0, max = 0.2, step = 0.01,
+                get = function()
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    return cfg.iconZoom or 0
+                end,
+                set = function(_, val)
+                    NephUI.db.profile.buffBarViewer.iconZoom = val
+                    if NephUI.RefreshViewers then
+                        NephUI:RefreshViewers()
+                    end
+                end,
+            },
+            iconBorderSize = {
+                type = "range",
+                name = "Icon Border",
+                desc = "Border thickness around the buff bar icon (0 = none).",
+                order = 12,
+                width = "normal",
+                min = 0, max = 5, step = 1,
+                get = function()
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    return cfg.iconBorderSize or 1
+                end,
+                set = function(_, val)
+                    NephUI.db.profile.buffBarViewer.iconBorderSize = val
+                    if NephUI.RefreshViewers then
+                        NephUI:RefreshViewers()
+                    end
+                end,
+            },
+            iconBorderColor = {
+                type = "color",
+                name = "Icon Border Color",
+                order = 12.1,
+                width = "normal",
+                hasAlpha = true,
+                get = function()
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    local c = cfg.iconBorderColor or {0, 0, 0, 1}
+                    return c[1], c[2], c[3], c[4] or 1
+                end,
+                set = function(_, r, g, b, a)
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    cfg.iconBorderColor = { r, g, b, a or 1 }
+                    NephUI.db.profile.buffBarViewer = cfg
+                    if NephUI.RefreshViewers then
+                        NephUI:RefreshViewers()
+                    end
+                end,
+            },
+            nameHeader = {
+                type = "header",
+                name = "Name Text",
+                order = 20,
+            },
+            showName = {
+                type = "toggle",
+                name = "Show Name",
+                order = 21,
+                width = "normal",
+                get = function()
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    return cfg.showName ~= false
+                end,
+                set = function(_, val)
+                    NephUI.db.profile.buffBarViewer.showName = val
+                    if NephUI.RefreshViewers then
+                        NephUI:RefreshViewers()
+                    end
+                end,
+            },
+            nameSize = {
+                type = "range",
+                name = "Name Size",
+                order = 22,
+                width = "normal",
+                min = 6, max = 32, step = 1,
+                get = function()
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    return cfg.nameSize or 14
+                end,
+                set = function(_, val)
+                    NephUI.db.profile.buffBarViewer.nameSize = val
+                    if NephUI.RefreshViewers then
+                        NephUI:RefreshViewers()
+                    end
+                end,
+            },
+            nameColor = {
+                type = "color",
+                name = "Name Color",
+                order = 23,
+                width = "normal",
+                hasAlpha = true,
+                get = function()
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    local c = cfg.nameColor or {1, 1, 1, 1}
+                    return c[1], c[2], c[3], c[4] or 1
+                end,
+                set = function(_, r, g, b, a)
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    cfg.nameColor = { r, g, b, a or 1 }
+                    NephUI.db.profile.buffBarViewer = cfg
+                    if NephUI.RefreshViewers then
+                        NephUI:RefreshViewers()
+                    end
+                end,
+            },
+            nameAnchor = {
+                type = "select",
+                name = "Name Anchor",
+                order = 23.1,
+                width = "normal",
+                values = GetChargeAnchorOptions(),
+                get = function()
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    local anchor = cfg.nameAnchor or "LEFT"
+                    return anchor == "MIDDLE" and "CENTER" or anchor
+                end,
+                set = function(_, val)
+                    if val == "MIDDLE" then val = "CENTER" end
+                    NephUI.db.profile.buffBarViewer.nameAnchor = val
+                    if NephUI.RefreshViewers then
+                        NephUI:RefreshViewers()
+                    end
+                end,
+            },
+            nameOffsetX = {
+                type = "range",
+                name = "Name Offset X",
+                order = 23.2,
+                width = "normal",
+                min = -100, max = 100, step = 1,
+                get = function()
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    return cfg.nameOffsetX or 0
+                end,
+                set = function(_, val)
+                    NephUI.db.profile.buffBarViewer.nameOffsetX = val
+                    if NephUI.RefreshViewers then
+                        NephUI:RefreshViewers()
+                    end
+                end,
+            },
+            nameOffsetY = {
+                type = "range",
+                name = "Name Offset Y",
+                order = 23.3,
+                width = "normal",
+                min = -100, max = 100, step = 1,
+                get = function()
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    return cfg.nameOffsetY or 0
+                end,
+                set = function(_, val)
+                    NephUI.db.profile.buffBarViewer.nameOffsetY = val
+                    if NephUI.RefreshViewers then
+                        NephUI:RefreshViewers()
+                    end
+                end,
+            },
+            durationHeader = {
+                type = "header",
+                name = "Duration Text",
+                order = 30,
+            },
+            showDuration = {
+                type = "toggle",
+                name = "Show Duration",
+                order = 31,
+                width = "normal",
+                get = function()
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    return cfg.showDuration ~= false
+                end,
+                set = function(_, val)
+                    NephUI.db.profile.buffBarViewer.showDuration = val
+                    if NephUI.RefreshViewers then
+                        NephUI:RefreshViewers()
+                    end
+                end,
+            },
+            durationSize = {
+                type = "range",
+                name = "Duration Size",
+                order = 32,
+                width = "normal",
+                min = 6, max = 32, step = 1,
+                get = function()
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    return cfg.durationSize or 12
+                end,
+                set = function(_, val)
+                    NephUI.db.profile.buffBarViewer.durationSize = val
+                    if NephUI.RefreshViewers then
+                        NephUI:RefreshViewers()
+                    end
+                end,
+            },
+            durationColor = {
+                type = "color",
+                name = "Duration Color",
+                order = 33,
+                width = "normal",
+                hasAlpha = true,
+                get = function()
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    local c = cfg.durationColor or {1, 1, 1, 1}
+                    return c[1], c[2], c[3], c[4] or 1
+                end,
+                set = function(_, r, g, b, a)
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    cfg.durationColor = { r, g, b, a or 1 }
+                    NephUI.db.profile.buffBarViewer = cfg
+                    if NephUI.RefreshViewers then
+                        NephUI:RefreshViewers()
+                    end
+                end,
+            },
+            durationAnchor = {
+                type = "select",
+                name = "Duration Anchor",
+                order = 33.1,
+                width = "normal",
+                values = GetChargeAnchorOptions(),
+                get = function()
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    local anchor = cfg.durationAnchor or "RIGHT"
+                    return anchor == "MIDDLE" and "CENTER" or anchor
+                end,
+                set = function(_, val)
+                    if val == "MIDDLE" then val = "CENTER" end
+                    NephUI.db.profile.buffBarViewer.durationAnchor = val
+                    if NephUI.RefreshViewers then
+                        NephUI:RefreshViewers()
+                    end
+                end,
+            },
+            durationOffsetX = {
+                type = "range",
+                name = "Duration Offset X",
+                order = 33.2,
+                width = "normal",
+                min = -100, max = 100, step = 1,
+                get = function()
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    return cfg.durationOffsetX or 0
+                end,
+                set = function(_, val)
+                    NephUI.db.profile.buffBarViewer.durationOffsetX = val
+                    if NephUI.RefreshViewers then
+                        NephUI:RefreshViewers()
+                    end
+                end,
+            },
+            durationOffsetY = {
+                type = "range",
+                name = "Duration Offset Y",
+                order = 33.3,
+                width = "normal",
+                min = -100, max = 100, step = 1,
+                get = function()
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    return cfg.durationOffsetY or 0
+                end,
+                set = function(_, val)
+                    NephUI.db.profile.buffBarViewer.durationOffsetY = val
+                    if NephUI.RefreshViewers then
+                        NephUI:RefreshViewers()
+                    end
+                end,
+            },
+            applicationsHeader = {
+                type = "header",
+                name = "Applications Text",
+                order = 40,
+            },
+            showApplications = {
+                type = "toggle",
+                name = "Show Applications",
+                order = 40.5,
+                width = "normal",
+                get = function()
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    return cfg.showApplications ~= false
+                end,
+                set = function(_, val)
+                    NephUI.db.profile.buffBarViewer.showApplications = val
+                    if NephUI.RefreshViewers then
+                        NephUI:RefreshViewers()
+                    end
+                end,
+            },
+            applicationsSize = {
+                type = "range",
+                name = "Applications Size",
+                order = 41,
+                width = "normal",
+                min = 6, max = 32, step = 1,
+                get = function()
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    return cfg.applicationsSize or 12
+                end,
+                set = function(_, val)
+                    NephUI.db.profile.buffBarViewer.applicationsSize = val
+                    if NephUI.RefreshViewers then
+                        NephUI:RefreshViewers()
+                    end
+                end,
+            },
+            applicationsColor = {
+                type = "color",
+                name = "Applications Color",
+                order = 42,
+                width = "normal",
+                hasAlpha = true,
+                get = function()
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    local c = cfg.applicationsColor or {1, 1, 1, 1}
+                    return c[1], c[2], c[3], c[4] or 1
+                end,
+                set = function(_, r, g, b, a)
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    cfg.applicationsColor = { r, g, b, a or 1 }
+                    NephUI.db.profile.buffBarViewer = cfg
+                    if NephUI.RefreshViewers then
+                        NephUI:RefreshViewers()
+                    end
+                end,
+            },
+            applicationsAnchor = {
+                type = "select",
+                name = "Applications Anchor",
+                order = 43,
+                width = "normal",
+                values = GetChargeAnchorOptions(),
+                get = function()
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    local anchor = cfg.applicationsAnchor or "BOTTOMRIGHT"
+                    return anchor == "MIDDLE" and "CENTER" or anchor
+                end,
+                set = function(_, val)
+                    if val == "MIDDLE" then val = "CENTER" end
+                    NephUI.db.profile.buffBarViewer.applicationsAnchor = val
+                    if NephUI.RefreshViewers then
+                        NephUI:RefreshViewers()
+                    end
+                end,
+            },
+            applicationsOffsetX = {
+                type = "range",
+                name = "Applications Offset X",
+                order = 44,
+                width = "normal",
+                min = -50, max = 50, step = 1,
+                get = function()
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    return cfg.applicationsOffsetX or 0
+                end,
+                set = function(_, val)
+                    NephUI.db.profile.buffBarViewer.applicationsOffsetX = val
+                    if NephUI.RefreshViewers then
+                        NephUI:RefreshViewers()
+                    end
+                end,
+            },
+            applicationsOffsetY = {
+                type = "range",
+                name = "Applications Offset Y",
+                order = 45,
+                width = "normal",
+                min = -50, max = 50, step = 1,
+                get = function()
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    return cfg.applicationsOffsetY or 0
+                end,
+                set = function(_, val)
+                    NephUI.db.profile.buffBarViewer.applicationsOffsetY = val
+                    if NephUI.RefreshViewers then
+                        NephUI:RefreshViewers()
+                    end
+                end,
+            },
+            layoutHeader = {
+                type = "header",
+                name = "Layout",
+                order = 50,
+            },
+            barSpacing = {
+                type = "range",
+                name = "Bar Spacing",
+                desc = "Space between bars when stacked.",
+                order = 52,
+                width = "normal",
+                min = 0, max = 20, step = 1,
+                get = function()
+                    local cfg = NephUI.db.profile.buffBarViewer or {}
+                    return cfg.barSpacing or 2
+                end,
+                set = function(_, val)
+                    NephUI.db.profile.buffBarViewer.barSpacing = val
+                    if NephUI.RefreshViewers then
+                        NephUI:RefreshViewers()
+                    end
+                end,
+            },
+        },
     }
 end
 
@@ -298,11 +860,26 @@ function NephUI:SetupOptions()
 
     local profileOptions
     if AceDBOptions and self.db then
-        profileOptions = AceDBOptions:GetOptionsTable(self.db)
-        -- Enhance profile options with LibDualSpec if available
-        if LibDualSpec then
-            LibDualSpec:EnhanceOptions(profileOptions, self.db)
+        -- Verify the database is properly initialized and isolated
+        if not self.db.sv or not self.db.keys then
+            error("NephUI: Database not properly initialized! Cannot create profile options.")
         end
+        
+        -- Get the profile options table for our specific database
+        -- CRITICAL: profileOptions.args is a SHARED table (optionsTable) used by ALL addons
+        -- We must NEVER modify profileOptions.args directly - only work with a deep copy
+        profileOptions = AceDBOptions:GetOptionsTable(self.db)
+        
+        -- Verify the handler is bound to our database
+        if profileOptions and profileOptions.handler then
+            if profileOptions.handler.db ~= self.db then
+                error("NephUI: Profile options handler is not bound to the correct database!")
+            end
+        end
+        
+        -- CRITICAL: Do NOT call LibDualSpec:EnhanceOptions on profileOptions here
+        -- because it might modify the shared profileOptions.args table.
+        -- We'll handle LibDualSpec after we've created our isolated copy.
     end
 
     local options = {
@@ -422,22 +999,6 @@ function NephUI:SetupOptions()
                         type = "header",
                         name = "UI Scale Settings",
                         order = 30,
-                    },
-                    
-                    -- Use UI Scale Toggle
-                    useUiScale = {
-                        type = "toggle",
-                        name = "Use UI Scale",
-                        desc = "Enable or disable UI scaling",
-                        order = 40,
-                        width = "full",
-                        get = function()
-                            local cvarValue = GetCVar("useUiScale")
-                            return cvarValue == "1" or cvarValue == "true"
-                        end,
-                        set = function(_, val)
-                            SetCVar("useUiScale", val and "1" or "0")
-                        end,
                     },
                     
                     spacer3 = {
@@ -604,13 +1165,20 @@ function NephUI:SetupOptions()
             
             -- CHAT TAB (moved from General sub-tab)
             chat = ChatOptions(),
+
+            -- QUALITY OF LIFE TAB
+            qol = QOLOptions(),
             
             -- ACTION BARS TAB
             actionBars = ActionBarOptions(),
-            
+
             -- BUFF/DEBUFF FRAMES TAB
             buffDebuffFrames = BuffDebuffFramesOptions(),
-            
+
+            -- PARTY & RAID FRAME TABS
+            partyFrames = PartyFrameOptions(),
+            raidFrames = RaidFrameOptions(),
+
             -- Cooldown Manager TAB
             viewers = {
                 type = "group",
@@ -799,65 +1367,12 @@ function NephUI:SetupOptions()
                                     end
                                 end,
                             },
-                            lcgXOffset = {
-                                type = "range",
-                                name = "X Offset",
-                                desc = "Horizontal offset (positive = expand outward, negative = shrink inward). Automatically accounts for viewer padding.",
-                                order = 34,
-                                width = "normal",
-                                min = -20,
-                                max = 20,
-                                step = 1,
-                                disabled = function()
-                                    local procGlow = NephUI.db.profile.viewers.general.procGlow
-                                    return not (procGlow and procGlow.glowType and procGlow.glowType ~= "Action Button Glow")
-                                end,
-                                get = function()
-                                    local procGlow = NephUI.db.profile.viewers.general.procGlow
-                                    return procGlow and procGlow.lcgXOffset or -7
-                                end,
-                                set = function(_, val)
-                                    if not NephUI.db.profile.viewers.general.procGlow then
-                                        NephUI.db.profile.viewers.general.procGlow = {}
-                                    end
-                                    NephUI.db.profile.viewers.general.procGlow.lcgXOffset = val
-                                    if NephUI.ProcGlow and NephUI.ProcGlow.RefreshAll then
-                                        NephUI.ProcGlow:RefreshAll()
-                                    end
-                                end,
-                            },
-                            lcgYOffset = {
-                                type = "range",
-                                name = "Y Offset",
-                                desc = "Vertical offset (positive = expand outward, negative = shrink inward). Automatically accounts for viewer padding.",
-                                order = 35,
-                                width = "normal",
-                                min = -20,
-                                max = 20,
-                                step = 1,
-                                disabled = function()
-                                    local procGlow = NephUI.db.profile.viewers.general.procGlow
-                                    return not (procGlow and procGlow.glowType and procGlow.glowType ~= "Action Button Glow")
-                                end,
-                                get = function()
-                                    local procGlow = NephUI.db.profile.viewers.general.procGlow
-                                    return procGlow and procGlow.lcgYOffset or -7
-                                end,
-                                set = function(_, val)
-                                    if not NephUI.db.profile.viewers.general.procGlow then
-                                        NephUI.db.profile.viewers.general.procGlow = {}
-                                    end
-                                    NephUI.db.profile.viewers.general.procGlow.lcgYOffset = val
-                                    if NephUI.ProcGlow and NephUI.ProcGlow.RefreshAll then
-                                        NephUI.ProcGlow:RefreshAll()
-                                    end
-                                end,
-                            },
                         },
                     },
                     essential = CreateViewerOptions("EssentialCooldownViewer", "Essential", 1),
                     utility = CreateViewerOptions("UtilityCooldownViewer", "Utility", 2),
                     buff = CreateViewerOptions("BuffIconCooldownViewer", "Buffs", 3),
+                    buffBar = CreateBuffBarViewerOptions(4),
                 },
             },
             
@@ -879,24 +1394,80 @@ function NephUI:SetupOptions()
     }
     
     if profileOptions then
+        -- AceDBOptions reuses a shared args table across addons; clone what we mutate.
+        -- We need to do a deep copy to ensure complete isolation from other addons.
+        -- Functions are preserved (not copied) to maintain handler references.
+        local function DeepCopyTable(source, seen)
+            seen = seen or {}
+            if type(source) ~= "table" then
+                return source
+            end
+            if seen[source] then
+                return seen[source] -- Avoid circular references
+            end
+            local copy = {}
+            seen[source] = copy
+            for k, v in pairs(source) do
+                local vtype = type(v)
+                if vtype == "table" then
+                    copy[k] = DeepCopyTable(v, seen)
+                elseif vtype == "function" then
+                    -- Preserve functions (they contain handler references)
+                    copy[k] = v
+                else
+                    copy[k] = v
+                end
+            end
+            return copy
+        end
+
         -- Copy all properties from profileOptions first
         options.args.profiles = {}
         for k, v in pairs(profileOptions) do
-            options.args.profiles[k] = v
+            if k ~= "args" then -- We'll handle args separately with deep copy
+                options.args.profiles[k] = v
+            end
         end
+
+        -- CRITICAL: Deep copy the args table FIRST, before ANY modifications
+        -- This ensures we never touch the shared optionsTable that other addons use
+        -- Functions are preserved to maintain proper handler binding
+        local profileArgs = DeepCopyTable(profileOptions.args or {})
+        options.args.profiles.args = profileArgs
+        
+        -- CRITICAL: Ensure the handler is correctly set to our database
+        -- The handler contains the database reference and must be unique per addon
+        options.args.profiles.handler = profileOptions.handler
+        
+        -- Verify the handler is bound to our database
+        if options.args.profiles.handler and options.args.profiles.handler.db ~= self.db then
+            error("NephUI: Profile options handler is not bound to the correct database! This will cause profile conflicts with other addons.")
+        end
+        
+        -- Store a reference to our database for use in closures
+        -- This ensures all profile operations use NephUI's database and never affect other addons
+        local nephDB = self.db
+        
         -- Override name and order
         options.args.profiles.name = "Profiles"
         options.args.profiles.order = 98
         
-        -- Merge LibDualSpec plugin options into args so they appear in the custom GUI
-        if LibDualSpec and profileOptions.plugins and profileOptions.plugins["LibDualSpec-1.0"] then
-            local dualSpecOptions = profileOptions.plugins["LibDualSpec-1.0"]
-            if not options.args.profiles.args then
-                options.args.profiles.args = {}
-            end
-            -- Merge all dual spec options into the args
-            for key, option in pairs(dualSpecOptions) do
-                options.args.profiles.args[key] = option
+        -- NOW we can safely enhance with LibDualSpec on the original profileOptions
+        -- Since we've already copied profileOptions.args, any modifications to the original
+        -- won't affect our isolated copy. LibDualSpec only modifies profileOptions.plugins anyway.
+        if LibDualSpec then
+            -- Enhance the original profileOptions (this modifies profileOptions.plugins, not args)
+            LibDualSpec:EnhanceOptions(profileOptions, self.db)
+            
+            -- Copy LibDualSpec plugin options from the original to our isolated copy
+            if profileOptions.plugins and profileOptions.plugins["LibDualSpec-1.0"] then
+                local dualSpecOptions = profileOptions.plugins["LibDualSpec-1.0"]
+                -- Deep copy the dual spec options to ensure complete isolation
+                local dualSpecOptionsCopy = DeepCopyTable(dualSpecOptions)
+                -- Merge all dual spec options into our isolated args
+                for key, option in pairs(dualSpecOptionsCopy) do
+                    options.args.profiles.args[key] = option
+                end
             end
         end
         
@@ -939,18 +1510,19 @@ function NephUI:SetupOptions()
                         return
                     end
                     
-                    -- Directly call SetProfile on the database - this will create the profile if it doesn't exist
-                    if NephUI and NephUI.db then
+                    -- Directly call SetProfile on OUR database - this will create the profile if it doesn't exist
+                    -- Use the stored reference to ensure we're always using NephUI's database
+                    if nephDB then
                         local profileName = profileBuffers.new
                         local success, err = pcall(function()
                             -- SetProfile will create the profile if it doesn't exist (lazy creation)
-                            NephUI.db:SetProfile(profileName)
+                            nephDB:SetProfile(profileName)
                             -- Access the profile to trigger its creation if it's new
-                            local _ = NephUI.db.profile
+                            local _ = nephDB.profile
                         end)
                         if success then
                             -- Verify the profile was created by checking if it's in the profiles list
-                            local profiles = NephUI.db:GetProfiles()
+                            local profiles = nephDB:GetProfiles()
                             local profileExists = false
                             for _, p in ipairs(profiles) do
                                 if p == profileName then
@@ -968,18 +1540,30 @@ function NephUI:SetupOptions()
                         end
                     else
                         -- Fallback to handler method if database not directly available
+                        -- CRITICAL: Always use our handler with our database
                         if originalSet then
                             if type(originalSet) == "string" then
-                                -- It's a method name, call it on the handler
-                                local handlerToUse = handler or info.handler
-                                if handlerToUse and handlerToUse[originalSet] then
+                                -- It's a method name, call it on OUR handler
+                                local handlerToUse = options.args.profiles.handler
+                                if handlerToUse and handlerToUse.db == nephDB and handlerToUse[originalSet] then
                                     handlerToUse[originalSet](handlerToUse, info, profileBuffers.new)
                                     print("|cff00ff00NephUI: Profile '" .. profileBuffers.new .. "' created successfully. Please reload your UI.|r")
                                 else
-                                    print("|cffff0000NephUI: Failed to create profile: Handler not available.|r")
+                                    print("|cffff0000NephUI: Failed to create profile: Handler not available or wrong database.|r")
                                 end
                             elseif type(originalSet) == "function" then
-                                originalSet(info, profileBuffers.new)
+                                -- Create a wrapper that ensures we use our handler
+                                local wrappedSet = function(info, value)
+                                    -- Ensure info.handler is our handler
+                                    local originalInfo = info
+                                    info = {}
+                                    for k, v in pairs(originalInfo) do
+                                        info[k] = v
+                                    end
+                                    info.handler = options.args.profiles.handler
+                                    originalSet(info, value)
+                                end
+                                wrappedSet(info, profileBuffers.new)
                                 print("|cff00ff00NephUI: Profile '" .. profileBuffers.new .. "' created successfully. Please reload your UI.|r")
                             end
                         else
@@ -1043,14 +1627,25 @@ function NephUI:SetupOptions()
                         return
                     end
                     -- Call the original CopyProfile function
+                    -- CRITICAL: Always use our handler with our database
                     if originalCopySet then
                         if type(originalCopySet) == "string" then
-                            local handlerToUse = handler or info.handler
-                            if handlerToUse and handlerToUse[originalCopySet] then
+                            local handlerToUse = options.args.profiles.handler
+                            if handlerToUse and handlerToUse.db == nephDB and handlerToUse[originalCopySet] then
                                 handlerToUse[originalCopySet](handlerToUse, info, profileBuffers.copyFrom)
                             end
                         elseif type(originalCopySet) == "function" then
-                            originalCopySet(info, profileBuffers.copyFrom)
+                            -- Create a wrapper that ensures we use our handler
+                            local wrappedSet = function(info, value)
+                                local originalInfo = info
+                                info = {}
+                                for k, v in pairs(originalInfo) do
+                                    info[k] = v
+                                end
+                                info.handler = options.args.profiles.handler
+                                originalCopySet(info, value)
+                            end
+                            wrappedSet(info, profileBuffers.copyFrom)
                         end
                     end
                     -- Clear the buffer
@@ -1113,12 +1708,14 @@ function NephUI:SetupOptions()
                         return
                     end
                     -- Show confirmation dialog
+                    -- CRITICAL: Always use our handler with our database
                     local dialogData = {
                         profileName = profileBuffers.delete,
-                        handler = handler or info.handler,
+                        handler = options.args.profiles.handler,
                         originalDeleteSet = originalDeleteSet,
                         info = info,
                         profileBuffers = profileBuffers,
+                        nephDB = nephDB, -- Store reference to our database
                     }
                     StaticPopup_Show("NEPHUI_DELETE_PROFILE", profileBuffers.delete, nil, dialogData)
                 end,
@@ -1133,13 +1730,24 @@ function NephUI:SetupOptions()
                 button2 = "Cancel",
                 OnAccept = function(self, data)
                     if data and data.originalDeleteSet then
+                        -- CRITICAL: Always use our handler with our database
                         if type(data.originalDeleteSet) == "string" then
                             local handlerToUse = data.handler
-                            if handlerToUse and handlerToUse[data.originalDeleteSet] then
+                            if handlerToUse and handlerToUse.db == data.nephDB and handlerToUse[data.originalDeleteSet] then
                                 handlerToUse[data.originalDeleteSet](handlerToUse, data.info, data.profileName)
                             end
                         elseif type(data.originalDeleteSet) == "function" then
-                            data.originalDeleteSet(data.info, data.profileName)
+                            -- Create a wrapper that ensures we use our handler
+                            local wrappedSet = function(info, value)
+                                local originalInfo = info
+                                info = {}
+                                for k, v in pairs(originalInfo) do
+                                    info[k] = v
+                                end
+                                info.handler = data.handler
+                                data.originalDeleteSet(info, value)
+                            end
+                            wrappedSet(data.info, data.profileName)
                         end
                     end
                     -- Clear the buffer
@@ -1163,25 +1771,36 @@ function NephUI:SetupOptions()
         if options.args.profiles.args and options.args.profiles.args.reset then
             local originalResetFunc = options.args.profiles.args.reset.func
             options.args.profiles.args.reset.func = function(info)
-                local handlerToUse = handler or info.handler
-                if handlerToUse and handlerToUse.Reset then
+                -- CRITICAL: Always use our handler with our database
+                local handlerToUse = options.args.profiles.handler
+                if handlerToUse and handlerToUse.db == nephDB and handlerToUse.Reset then
                     handlerToUse:Reset()
                     print("|cff00ff00NephUI: Profile reset to defaults. Please reload your UI.|r")
                 elseif originalResetFunc then
                     -- Fallback to original func if handler method doesn't exist
                     if type(originalResetFunc) == "string" then
-                        if handlerToUse and handlerToUse[originalResetFunc] then
+                        if handlerToUse and handlerToUse.db == nephDB and handlerToUse[originalResetFunc] then
                             handlerToUse[originalResetFunc](handlerToUse)
                             print("|cff00ff00NephUI: Profile reset to defaults. Please reload your UI.|r")
                         end
                     elseif type(originalResetFunc) == "function" then
-                        originalResetFunc(info)
+                        -- Create a wrapper that ensures we use our handler
+                        local wrappedFunc = function(info)
+                            local originalInfo = info
+                            info = {}
+                            for k, v in pairs(originalInfo) do
+                                info[k] = v
+                            end
+                            info.handler = handlerToUse
+                            originalResetFunc(info)
+                        end
+                        wrappedFunc(info)
                         print("|cff00ff00NephUI: Profile reset to defaults. Please reload your UI.|r")
                     end
                 else
-                    -- Last resort: call ResetProfile directly on the database
-                    if NephUI and NephUI.db then
-                        NephUI.db:ResetProfile()
+                    -- Last resort: call ResetProfile directly on our database
+                    if nephDB then
+                        nephDB:ResetProfile()
                         print("|cff00ff00NephUI: Profile reset to defaults. Please reload your UI.|r")
                     end
                 end
@@ -1297,9 +1916,6 @@ function NephUI:SetupOptions()
     
     -- Store options for custom GUI
     self.configOptions = options
-    
-    -- Setup drag and drop for custom icons
-    self:SetupCustomIconsDragDrop()
 end
 
 -- Disable unit frame anchors when config panel closes
@@ -1316,268 +1932,3 @@ function NephUI:DisableUnitFrameAnchorsOnConfigClose()
         end
     end
 end
-
--- Setup drag-and-drop frame for custom icons tab
-function NephUI:SetupCustomIconsDragDrop()
-    -- No longer using AceConfigDialog - using custom GUI instead
-    
-    -- Create a drag-and-drop frame that overlays the description area
-    if not self.customIconsDragDropFrame then
-        local dragFrame = CreateFrame("Button", "NephUI_CustomIconsDragDrop", UIParent, "BackdropTemplate")
-        dragFrame:SetFrameStrata("FULLSCREEN_DIALOG")  -- Higher than DIALOG to be above GUI
-        dragFrame:SetFrameLevel(10000)  -- Very high frame level to ensure it's on top
-        dragFrame:EnableMouse(true)
-        dragFrame:EnableMouseWheel(false)
-        dragFrame:RegisterForDrag("LeftButton")
-        dragFrame:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-        dragFrame:SetMovable(false)
-        dragFrame:SetClampedToScreen(false)
-        dragFrame:SetToplevel(false)  -- Don't be toplevel so it can be parented
-        dragFrame:Hide()
-        
-        -- Add a subtle backdrop to show the drop area (optional, can be removed if too intrusive)
-        dragFrame:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 2,
-            insets = { left = 0, right = 0, top = 0, bottom = 0 },
-        })
-        dragFrame:SetBackdropColor(0, 1, 0, 0.05) -- Very subtle green tint
-        dragFrame:SetBackdropBorderColor(0, 1, 0, 0.3) -- Subtle green border
-        
-        -- Track the last item ID we processed to avoid duplicates
-        local lastProcessedItemID = nil
-        
-        -- Function to handle item drops
-        local function HandleItemDrop()
-            local cursorType, id = GetCursorInfo()
-            
-            if cursorType == "item" and id and type(id) == "number" then
-                local itemID = id
-                
-                -- Don't process the same item multiple times
-                if itemID == lastProcessedItemID then
-                    return
-                end
-                
-                lastProcessedItemID = itemID
-                
-                if NephUI:AddCustomItem(itemID) then
-                    local itemName = GetItemInfo(itemID)
-                    print("|cff00ff00[NephUI] Added " .. (itemName or ("Item " .. itemID)) .. " to Custom Icons tracker|r")
-                    ClearCursor()
-                    -- Reset after a short delay to allow re-adding if needed
-                    C_Timer.After(1.0, function()
-                        lastProcessedItemID = nil
-                    end)
-                else
-                    print("|cffff0000[NephUI] Failed to add item or item already tracked|r")
-                    ClearCursor()
-                end
-            end
-        end
-        
-        -- Automatically add item when mouse enters drop area with item on cursor
-        dragFrame:SetScript("OnEnter", function(self)
-            -- Check if there's an item on the cursor when entering
-            local cursorType, id = GetCursorInfo()
-            if cursorType == "item" and id and type(id) == "number" then
-                -- Only process if it's not the same item we just processed
-                if id ~= lastProcessedItemID then
-                    HandleItemDrop()
-                end
-            end
-        end)
-        
-        dragFrame:SetScript("OnLeave", function(self)
-            -- Reset when leaving so we can add the same item again if needed
-            lastProcessedItemID = nil
-        end)
-        
-        -- Also handle traditional drag and drop (for compatibility)
-        dragFrame:SetScript("OnReceiveDrag", function(self, ...)
-            HandleItemDrop()
-        end)
-        
-        -- Function to update drag frame position - covers entire GUI when item is on cursor
-        local function UpdateDragDropFrame()
-            -- Use custom GUI frame instead of AceConfigDialog
-            local configFrame = _G["NephUI_ConfigFrame"]
-            if not configFrame or not configFrame:IsVisible() then
-                dragFrame:Hide()
-                return
-            end
-            
-            -- Check if there's an item on the cursor
-            local cursorType, id = GetCursorInfo()
-            if cursorType == "item" and id then
-                -- Item is on cursor, show drop area over entire GUI
-                -- Parent to config frame and cover entire frame
-                dragFrame:SetParent(configFrame)
-                dragFrame:ClearAllPoints()
-                dragFrame:SetAllPoints(configFrame)
-                -- Ensure frame is on top after parenting
-                dragFrame:SetFrameStrata("FULLSCREEN_DIALOG")
-                dragFrame:SetFrameLevel(10000)
-                dragFrame:EnableMouse(true)
-                dragFrame:Show()
-            else
-                -- No item on cursor, hide drop area
-                dragFrame:Hide()
-            end
-        end
-        
-        -- Monitor cursor for items and update drop area visibility
-        local cursorCheckFrame = CreateFrame("Frame", "NephUI_CursorCheck", UIParent)
-        local checkCount = 0
-        cursorCheckFrame:SetScript("OnUpdate", function(self, elapsed)
-            checkCount = checkCount + 1
-            -- Check every 0.1 seconds
-            if checkCount >= 10 then
-                checkCount = 0
-                UpdateDragDropFrame()
-            end
-        end)
-        
-        -- Hook into custom GUI frame when it's shown
-        -- Hook the OpenConfigGUI function to set up drag drop when config opens
-        if NephUI.OpenConfigGUI then
-            local originalOpenConfigGUI = NephUI.OpenConfigGUI
-            NephUI.OpenConfigGUI = function(self, options)
-                local result = originalOpenConfigGUI(self, options)
-                
-                -- Rebuild tracked items list when config opens
-                C_Timer.After(0.2, function()
-                    if NephUI.RebuildTrackedItemsList then
-                        NephUI:RebuildTrackedItemsList()
-                    end
-                end)
-                
-                -- Initial update of drag frame
-                C_Timer.After(0.1, function()
-                    UpdateDragDropFrame()
-                end)
-                
-                return result
-            end
-        end
-        
-        -- Also hook OnShow on the config frame if it exists
-        local frameWatcher = CreateFrame("Frame")
-        frameWatcher:SetScript("OnUpdate", function(self, elapsed)
-            local configFrame = _G["NephUI_ConfigFrame"]
-            if configFrame and configFrame:IsVisible() and not configFrame._dragDropHooked then
-                configFrame._dragDropHooked = true
-                local originalOnShow = configFrame:GetScript("OnShow")
-                configFrame:SetScript("OnShow", function(self)
-                    if originalOnShow then
-                        originalOnShow(self)
-                    end
-                    -- Update drag frame when config is shown
-                    C_Timer.After(0.1, function()
-                        UpdateDragDropFrame()
-                    end)
-                end)
-                
-                local originalOnHide = configFrame:GetScript("OnHide")
-                configFrame:SetScript("OnHide", function(self)
-                    if originalOnHide then
-                        originalOnHide(self)
-                    end
-                    -- Hide drag frame when config is hidden
-                    dragFrame:Hide()
-                    -- Disable unit frame anchors when config panel closes
-                    NephUI:DisableUnitFrameAnchorsOnConfigClose()
-                end)
-            elseif (not configFrame or not configFrame:IsVisible()) and frameWatcher._wasVisible then
-                frameWatcher._wasVisible = false
-                if configFrame then
-                    configFrame._dragDropHooked = nil
-                end
-            elseif configFrame and configFrame:IsVisible() then
-                frameWatcher._wasVisible = true
-            end
-        end)
-        
-        
-        -- Initial update
-        UpdateDragDropFrame()
-        
-        self.customIconsDragDropFrame = dragFrame
-    end
-end
-
--- Function to rebuild tracked items list in config
--- Debounce mechanism to prevent rapid rebuilds
-local lastRebuildTime = 0
-local REBUILD_DEBOUNCE = 0.5  -- Minimum time between rebuilds (in seconds)
-
-function NephUI:RebuildTrackedItemsList()
-    -- Debounce: prevent rapid rebuilds
-    local currentTime = GetTime()
-    if currentTime - lastRebuildTime < REBUILD_DEBOUNCE then
-        return
-    end
-    lastRebuildTime = currentTime
-    
-    if not self._trackedItemsGroup then 
-        -- Try to get the reference again if it's not set
-        -- Get options from stored configOptions
-        if self.configOptions and self.configOptions.args and 
-           self.configOptions.args.customIcons and 
-           self.configOptions.args.customIcons.args and 
-           self.configOptions.args.customIcons.args.general and
-           self.configOptions.args.customIcons.args.general.args and 
-           self.configOptions.args.customIcons.args.general.args.trackedItemsGroup then
-            self._trackedItemsGroup = self.configOptions.args.customIcons.args.general.args.trackedItemsGroup
-        end
-        if not self._trackedItemsGroup then
-            return
-        end
-    end
-    
-    -- Clear existing item entries (but keep the static ones like dragDropHeader, itemListHeader, etc.)
-    for key in pairs(self._trackedItemsGroup.args) do
-        if key:match("^item_") then
-            self._trackedItemsGroup.args[key] = nil
-        end
-    end
-    
-    -- Add current tracked items
-    local itemEntries = GetTrackedItemsEntries()
-    for key, entry in pairs(itemEntries) do
-        self._trackedItemsGroup.args[key] = entry
-    end
-    
-    -- Update the frame's configOptions if it exists (ensure it has the same reference)
-    local configFrame = _G["NephUI_ConfigFrame"]
-    if configFrame and configFrame:IsShown() then
-        -- Ensure the frame's configOptions points to the same table
-        if not configFrame.configOptions or configFrame.configOptions ~= self.configOptions then
-            configFrame.configOptions = self.configOptions
-        end
-        
-        -- Also update the trackedItemsGroup reference in the frame's configOptions
-        if configFrame.configOptions and configFrame.configOptions.args and 
-           configFrame.configOptions.args.customIcons and 
-           configFrame.configOptions.args.customIcons.args and 
-           configFrame.configOptions.args.customIcons.args.general and
-           configFrame.configOptions.args.customIcons.args.general.args and 
-           configFrame.configOptions.args.customIcons.args.general.args.trackedItemsGroup then
-            -- This should already be the same reference, but ensure it's updated
-            configFrame.configOptions.args.customIcons.args.general.args.trackedItemsGroup = self._trackedItemsGroup
-        end
-        
-        -- Refresh the GUI
-        if configFrame.FullRefresh then
-            configFrame:FullRefresh()
-        end
-    end
-    
-    -- Notify AceConfig to refresh (for backwards compatibility)
-    local AceConfigRegistry = LibStub("AceConfigRegistry-3.0")
-    if AceConfigRegistry then
-        AceConfigRegistry:NotifyChange(ADDON_NAME)
-    end
-end
-

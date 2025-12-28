@@ -18,32 +18,35 @@ ProcGlow.LibCustomGlowTypes = {
     "Proc Glow",
 }
 
--- Get viewer padding for a button
-local function GetViewerPadding(button)
-    if not button then return 0 end
-    
-    -- Walk up the parent chain to find if this button is inside a viewer
-    local frame = button
-    local maxDepth = 10
-    local depth = 0
-    
-    while frame and depth < maxDepth do
-        local frameName = frame:GetName()
-        if frameName and NephUI.viewers then
-            for _, viewerName in ipairs(NephUI.viewers) do
-                if frameName == viewerName then
-                    local settings = NephUI.db.profile.viewers[viewerName]
-                    if settings then
-                        return settings.padding or 5
-                    end
+-- Try to find the icon texture attached to the button
+local function GetButtonIconTexture(button)
+    if not button then return nil end
+
+    local icon = button.icon or button.Icon or button.IconTexture
+    if icon and icon.GetObjectType and icon:GetObjectType() == "Texture" then
+        return icon
+    end
+
+    local buttonName = button.GetName and button:GetName()
+    if buttonName then
+        local namedIcon = _G[buttonName .. "Icon"] or _G[buttonName .. "IconTexture"]
+        if namedIcon then
+            return namedIcon
+        end
+    end
+
+    if button.GetRegions then
+        for _, region in ipairs({button:GetRegions()}) do
+            if region and region.GetObjectType and region:GetObjectType() == "Texture" then
+                local regionName = region:GetName()
+                if not regionName or regionName:find("Icon") then
+                    return region
                 end
             end
         end
-        frame = frame:GetParent()
-        depth = depth + 1
     end
-    
-    return 0
+
+    return nil
 end
 
 -- Get settings for proc glow (viewers only)
@@ -67,20 +70,9 @@ local function ApplyLibCustomGlow(icon, settings)
     local lines = settings.lcgLines or 14
     local frequency = settings.lcgFrequency or 0.25
     local thickness = settings.lcgThickness or 2
-    local baseXOffset = settings.lcgXOffset or -7
-    local baseYOffset = settings.lcgYOffset or -7
-    
-    -- Get viewer padding to account for icon texture inset
-    local padding = GetViewerPadding(icon)
-    
-    -- Adjust offsets to account for padding
-    -- Padding insets the icon texture from the button frame
-    -- Icon texture is at: button TOPLEFT + (padding, -padding) to button BOTTOMRIGHT + (-padding, padding)
-    -- For the glow to align with the icon texture, we need to offset by padding
-    -- baseXOffset: positive = expand outward from icon texture, negative = shrink inward
-    -- We add padding so the glow aligns with the icon texture edge
-    local xOffset = baseXOffset + padding
-    local yOffset = baseYOffset + padding
+
+    -- Get the icon texture for anchoring (like ActionBarGlow does)
+    local iconTexture = GetButtonIconTexture(icon)
     
     -- Use viewer glow key
     local glowKey = "_NephUICustomGlow"
@@ -103,18 +95,21 @@ local function ApplyLibCustomGlow(icon, settings)
         LCG.PixelGlow_Start(icon, color, lines, frequency, nil, thickness, 0, 0, true, glowKey)
         local glowFrame = icon["_PixelGlow" .. glowKey]
         if glowFrame then
+            -- Anchor glow frame to icon texture like ActionBarGlow does
+            local target = iconTexture or icon
             glowFrame:ClearAllPoints()
-            -- xOffset: positive = expand outward, negative = shrink inward
-            glowFrame:SetPoint("TOPLEFT", icon, "TOPLEFT", -xOffset, xOffset)
-            glowFrame:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", xOffset, -xOffset)
+            glowFrame:SetPoint("TOPLEFT", target, "TOPLEFT", 0, 0)
+            glowFrame:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", 0, 0)
         end
     elseif glowType == "Autocast Shine" then
         LCG.AutoCastGlow_Start(icon, color, lines, frequency, 1, 0, 0, glowKey)
         local glowFrame = icon["_AutoCastGlow" .. glowKey]
         if glowFrame then
+            -- Anchor glow frame to icon texture like ActionBarGlow does
+            local target = iconTexture or icon
             glowFrame:ClearAllPoints()
-            glowFrame:SetPoint("TOPLEFT", icon, "TOPLEFT", -xOffset, xOffset)
-            glowFrame:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", xOffset, -xOffset)
+            glowFrame:SetPoint("TOPLEFT", target, "TOPLEFT", 0, 0)
+            glowFrame:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", 0, 0)
         end
     elseif glowType == "Action Button Glow" then
         LCG.ButtonGlow_Start(icon, color, frequency)
@@ -122,8 +117,8 @@ local function ApplyLibCustomGlow(icon, settings)
         LCG.ProcGlow_Start(icon, {
             color = color,
             startAnim = true,
-            xOffset = xOffset,
-            yOffset = yOffset,
+            xOffset = 0,
+            yOffset = 0,
             key = glowKey
         })
     end

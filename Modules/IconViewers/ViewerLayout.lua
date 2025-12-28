@@ -21,6 +21,10 @@ local DIRECTION_RULES = {
 IconViewers.__cdmTrackedViewers = IconViewers.__cdmTrackedViewers or {}
 local trackedViewers = IconViewers.__cdmTrackedViewers
 
+local function PixelSnap(value)
+    return math.max(0, math.floor((value or 0) + 0.5))
+end
+
 local function ResetTrackedViewerAnchors()
     if not trackedViewers then return end
 
@@ -28,6 +32,8 @@ local function ResetTrackedViewerAnchors()
         if viewer and viewer.GetName then
             viewer.__cdmAnchorShiftX = 0
             viewer.__cdmAnchorShiftY = 0
+            -- Prevent a post-EditMode snap by skipping the next anchor adjust
+            viewer.__cdmSkipNextAnchorAdjust = true
             IconViewers:ApplyViewerLayout(viewer)
         else
             trackedViewers[viewer] = nil
@@ -152,8 +158,9 @@ local function ResolveDirections(viewerName, settings)
     return primary, secondary, rowLimit, rule.type
 end
 
-local function ComputeIconDimensions(settings)
-    local iconSize = (settings.iconSize or 32) + 0.1
+local function ComputeIconDimensions(settings, sizeOverride)
+    local baseSize = sizeOverride or settings.iconSize or 32
+    local iconSize = baseSize + 0.1
     local aspectRatioValue = 1.0
 
     if settings.aspectRatioCrop then
@@ -176,20 +183,49 @@ local function ComputeIconDimensions(settings)
         end
     end
 
-    return iconWidth, iconHeight
+    -- Snap to whole pixels to keep downstream layout widths stable
+    return PixelSnap(iconWidth), PixelSnap(iconHeight)
+end
+
+local function GetRowIconSize(settings, rowIndex)
+    if not settings or not settings.rowIconSizes then
+        return nil
+    end
+
+    local value = settings.rowIconSizes[rowIndex]
+    if type(value) == "string" then
+        value = tonumber(value)
+    end
+
+    if type(value) == "number" and value > 0 then
+        return value
+    end
+
+    return nil
 end
 
 local function ComputeSpacing(settings)
     local spacing = settings.spacing or 4
-    return spacing - 10
+    return PixelSnap(spacing + 2)
 end
 
 local function BuildDirectionKey(primary, secondary, rowLimit)
     return string.format("%s_%s_%d", primary or "CENTERED_HORIZONTAL", secondary or "NONE", rowLimit or 0)
 end
 
-local function BuildAppearanceKey(iconWidth, iconHeight, spacing)
-    return string.format("%.3f:%.3f:%.3f", iconWidth or 0, iconHeight or 0, spacing or 0)
+local function BuildAppearanceKey(baseWidth, baseHeight, spacing, rowDimensions)
+    local parts = { string.format("%.3f:%.3f:%.3f", baseWidth or 0, baseHeight or 0, spacing or 0) }
+
+    if rowDimensions then
+        for i = 1, 3 do
+            local dims = rowDimensions[i]
+            if dims and dims.width and dims.height then
+                parts[#parts + 1] = string.format("r%d:%.3f:%.3f", i, dims.width, dims.height)
+            end
+        end
+    end
+
+    return table.concat(parts, "|")
 end
 
 local function PrepareIconOrder(viewerName, icons)
@@ -201,29 +237,47 @@ local function PrepareIconOrder(viewerName, icons)
         end
     end
 
-    table.sort(icons, function(a, b)
-        local la = a.layoutIndex or a:GetID() or a.__cdmCreationOrder or 0
-        local lb = b.layoutIndex or b:GetID() or b.__cdmCreationOrder or 0
-        if la == lb then
-            return (a.__cdmCreationOrder or 0) < (b.__cdmCreationOrder or 0)
+    -- Only sort if we haven't cached the order or if icon count changed
+    local needsSort = true
+    if #icons > 0 then
+        local cacheKey = tostring(#icons)
+        for i, icon in ipairs(icons) do
+            local iconKey = tostring(icon.layoutIndex or icon:GetID() or icon.__cdmCreationOrder or 0)
+            cacheKey = cacheKey .. "_" .. iconKey
         end
-        return la < lb
-    end)
+
+        if icons.__cdmLastSortKey == cacheKey then
+            needsSort = false
+        else
+            icons.__cdmLastSortKey = cacheKey
+        end
+    end
+
+    if needsSort then
+        table.sort(icons, function(a, b)
+            local la = a.layoutIndex or a:GetID() or a.__cdmCreationOrder or 0
+            local lb = b.layoutIndex or b:GetID() or b.__cdmCreationOrder or 0
+            if la == lb then
+                return (a.__cdmCreationOrder or 0) < (b.__cdmCreationOrder or 0)
+            end
+            return la < lb
+        end)
+    end
 end
 
-local function LayoutHorizontal(icons, container, primary, secondary, iconWidth, iconHeight, spacing, rowLimit)
+local function LayoutHorizontal(icons, container, primary, secondary, spacing, rowLimit, getDimensionsForRow)
     local count = #icons
     if count == 0 then return 0, 0, 0 end
 
     local iconsPerRow = rowLimit > 0 and math.max(1, rowLimit) or count
     local numRows = ceil(count / iconsPerRow)
-    local horizontalSpacing = iconWidth + spacing
-    local verticalSpacing = iconHeight + spacing
     local rowDirection = (secondary == "UP") and 1 or -1
 
     local rowMeta = {}
     local maxRowWidth = 0
+    local totalHeight = 0
     for row = 1, numRows do
+        local iconWidth, iconHeight = getDimensionsForRow(row)
         local rowStart = (row - 1) * iconsPerRow + 1
         local rowEnd = math.min(row * iconsPerRow, count)
         local rowCount = rowEnd - rowStart + 1
@@ -231,106 +285,143 @@ local function LayoutHorizontal(icons, container, primary, secondary, iconWidth,
         if rowWidth < iconWidth then
             rowWidth = iconWidth
         end
-        if rowWidth > maxRowWidth then
-            maxRowWidth = rowWidth
-        end
-        rowMeta[row] = { startIndex = rowStart, count = rowCount, width = rowWidth }
+        maxRowWidth = math.max(maxRowWidth, rowWidth)
+        totalHeight = totalHeight + iconHeight
+
+        rowMeta[row] = {
+            startIndex = rowStart,
+            count = rowCount,
+            width = rowWidth,
+            iconWidth = iconWidth,
+            iconHeight = iconHeight,
+        }
     end
 
-    local totalHeight = (numRows - 1) * verticalSpacing + iconHeight
+    totalHeight = totalHeight + (numRows - 1) * spacing
+    -- Start from the top (for DOWN) or bottom (for UP) so row 1 stays fixed without moving the container
     local anchorY
     if rowDirection == -1 then
-        anchorY = (totalHeight / 2) - (iconHeight / 2)
+        anchorY = (totalHeight / 2) - (rowMeta[1].iconHeight / 2)
     else
-        anchorY = -(totalHeight / 2) + (iconHeight / 2)
+        anchorY = -(totalHeight / 2) + (rowMeta[1].iconHeight / 2)
     end
 
-    local leftEdge = -(maxRowWidth / 2) + (iconWidth / 2)
-    local rightEdge = (maxRowWidth / 2) - (iconWidth / 2)
-
+    local currentY = anchorY
     for row = 1, numRows do
         local meta = rowMeta[row]
-        local rowOffset = anchorY + (row - 1) * verticalSpacing * rowDirection
+        local rowLeftEdge = -(maxRowWidth / 2) + (meta.iconWidth / 2)
+        local rowRightEdge = (maxRowWidth / 2) - (meta.iconWidth / 2)
         local baseX
         if primary == "CENTERED_HORIZONTAL" then
-            baseX = -meta.width / 2 + iconWidth / 2
+            baseX = -meta.width / 2 + meta.iconWidth / 2
         elseif primary == "RIGHT" then
-            baseX = leftEdge
+            baseX = rowLeftEdge
         else -- LEFT
-            baseX = rightEdge
+            baseX = rowRightEdge
         end
 
         for position = 0, meta.count - 1 do
             local icon = icons[meta.startIndex + position]
             local x
             if primary == "LEFT" then
-                x = baseX - position * horizontalSpacing
+                x = baseX - position * (meta.iconWidth + spacing)
             else
-                x = baseX + position * horizontalSpacing
+                x = baseX + position * (meta.iconWidth + spacing)
             end
 
-            icon:SetPoint("CENTER", container, "CENTER", x, rowOffset)
+            icon:SetSize(meta.iconWidth, meta.iconHeight)
+            icon:SetPoint("CENTER", container, "CENTER", x, currentY)
+        end
+
+        local nextMeta = rowMeta[row + 1]
+        if nextMeta then
+            local step = (meta.iconHeight / 2) + (nextMeta.iconHeight / 2) + spacing
+            currentY = currentY + step * rowDirection
         end
     end
 
-    return maxRowWidth, totalHeight, anchorY
+    return maxRowWidth, totalHeight, 0
 end
 
-local function LayoutVertical(icons, container, primary, secondary, iconWidth, iconHeight, spacing, rowLimit)
+local function LayoutVertical(icons, container, primary, secondary, spacing, rowLimit, getDimensionsForRow)
     local count = #icons
     if count == 0 then return 0, 0, 0 end
 
     local iconsPerColumn = rowLimit > 0 and math.max(1, rowLimit) or count
     local numColumns = ceil(count / iconsPerColumn)
-    local horizontalSpacing = iconWidth + spacing
-    local verticalSpacing = iconHeight + spacing
     local columnDirection = (secondary == "LEFT") and -1 or 1
     local verticalDirection = (primary == "UP") and 1 or -1
 
     local columnMeta = {}
-    local maxColumnCount = 0
+    local maxColumnHeight = 0
+    local totalWidth = 0
     for column = 1, numColumns do
+        local iconWidth, iconHeight = getDimensionsForRow(column)
         local columnStart = (column - 1) * iconsPerColumn + 1
         local columnEnd = math.min(column * iconsPerColumn, count)
         local columnCount = columnEnd - columnStart + 1
-        if columnCount > maxColumnCount then
-            maxColumnCount = columnCount
+        local columnHeight = columnCount * iconHeight + (columnCount - 1) * spacing
+
+        maxColumnHeight = math.max(maxColumnHeight, columnHeight)
+        totalWidth = totalWidth + iconWidth
+        if column > 1 then
+            totalWidth = totalWidth + spacing
         end
-        columnMeta[column] = { startIndex = columnStart, count = columnCount }
+
+        columnMeta[column] = {
+            startIndex = columnStart,
+            count = columnCount,
+            height = columnHeight,
+            iconWidth = iconWidth,
+            iconHeight = iconHeight,
+        }
     end
 
-    local totalWidth = (numColumns - 1) * horizontalSpacing + iconWidth
-    local totalHeight = (maxColumnCount - 1) * verticalSpacing + iconHeight
+    local totalHeight = maxColumnHeight
 
+    -- Start from left (for RIGHT growth) or right (for LEFT growth) so column 1 stays fixed
     local anchorX
     if columnDirection == 1 then
-        anchorX = -(totalWidth / 2) + (iconWidth / 2)
+        anchorX = -(totalWidth / 2) + (columnMeta[1].iconWidth / 2)
     else
-        anchorX = (totalWidth / 2) - (iconWidth / 2)
+        anchorX = (totalWidth / 2) - (columnMeta[1].iconWidth / 2)
     end
 
     local anchorY
     if verticalDirection == -1 then
-        anchorY = (totalHeight / 2) - (iconHeight / 2)
+        anchorY = (totalHeight / 2) - (columnMeta[1].iconHeight / 2)
     else
-        anchorY = -(totalHeight / 2) + (iconHeight / 2)
+        anchorY = -(totalHeight / 2) + (columnMeta[1].iconHeight / 2)
     end
 
+    local currentX = anchorX
     for column = 1, numColumns do
         local meta = columnMeta[column]
-        local x = anchorX + (column - 1) * horizontalSpacing * columnDirection
 
+        local startY = anchorY
         for position = 0, meta.count - 1 do
             local icon = icons[meta.startIndex + position]
-            local y = anchorY + position * verticalSpacing * verticalDirection
-            icon:SetPoint("CENTER", container, "CENTER", x, y)
+            local y = startY + position * (meta.iconHeight + spacing) * verticalDirection
+            icon:SetSize(meta.iconWidth, meta.iconHeight)
+            icon:SetPoint("CENTER", container, "CENTER", currentX, y)
+        end
+
+        local nextMeta = columnMeta[column + 1]
+        if nextMeta then
+            local step = (meta.iconWidth / 2) + (nextMeta.iconWidth / 2) + spacing
+            currentX = currentX + step * columnDirection
         end
     end
 
-    return totalWidth, totalHeight, anchorX
+    return totalWidth, totalHeight, 0
 end
 
 local function AdjustViewerAnchor(viewer, shiftX, shiftY)
+    if viewer and viewer.__cdmSkipNextAnchorAdjust then
+        viewer.__cdmSkipNextAnchorAdjust = nil
+        return
+    end
+
     shiftX = shiftX or 0
     shiftY = shiftY or 0
 
@@ -382,17 +473,30 @@ function IconViewers:ApplyViewerLayout(viewer)
 
     PrepareIconOrder(name, icons)
 
-    local iconWidth, iconHeight = ComputeIconDimensions(settings)
+    local baseIconWidth, baseIconHeight = ComputeIconDimensions(settings)
     local spacing = ComputeSpacing(settings)
     local primary, secondary, rowLimit, layoutType = ResolveDirections(name, settings)
     local directionKey = BuildDirectionKey(primary, secondary, rowLimit)
-    local appearanceKey = BuildAppearanceKey(iconWidth, iconHeight, spacing)
+    local rowDimensions = {}
+    local function GetDimensionsForRow(rowIndex)
+        if not rowDimensions[rowIndex] then
+            local overrideSize = GetRowIconSize(settings, rowIndex)
+            local w, h = ComputeIconDimensions(settings, overrideSize)
+            rowDimensions[rowIndex] = { width = w, height = h }
+        end
+        return rowDimensions[rowIndex].width, rowDimensions[rowIndex].height
+    end
+    for preload = 1, 3 do
+        GetDimensionsForRow(preload)
+    end
+    local appearanceKey = BuildAppearanceKey(baseIconWidth, baseIconHeight, spacing, rowDimensions)
 
     if name == "BuffIconCooldownViewer" and primary == "STATIC" then
+        local rowWidth, rowHeight = GetDimensionsForRow(1)
         for _, icon in ipairs(icons) do
-            icon:SetWidth(iconWidth)
-            icon:SetHeight(iconHeight)
-            icon:SetSize(iconWidth, iconHeight)
+            icon:SetWidth(rowWidth)
+            icon:SetHeight(rowHeight)
+            icon:SetSize(rowWidth, rowHeight)
         end
         viewer.__cdmLastGrowthDirection = directionKey
         viewer.__cdmLastAppearanceKey = appearanceKey
@@ -403,36 +507,29 @@ function IconViewers:ApplyViewerLayout(viewer)
 
     for _, icon in ipairs(icons) do
         icon:ClearAllPoints()
-        icon:SetWidth(iconWidth)
-        icon:SetHeight(iconHeight)
-        icon:SetSize(iconWidth, iconHeight)
     end
 
     local totalWidth, totalHeight, anchorShift
     if layoutType == "VERTICAL" then
-        totalWidth, totalHeight, anchorShift = LayoutVertical(icons, container, primary, secondary, iconWidth, iconHeight, spacing, rowLimit)
+        totalWidth, totalHeight, anchorShift = LayoutVertical(icons, container, primary, secondary, spacing, rowLimit, GetDimensionsForRow)
     else
-        totalWidth, totalHeight, anchorShift = LayoutHorizontal(icons, container, primary, secondary, iconWidth, iconHeight, spacing, rowLimit)
+        totalWidth, totalHeight, anchorShift = LayoutHorizontal(icons, container, primary, secondary, spacing, rowLimit, GetDimensionsForRow)
     end
 
-    viewer.__cdmIconWidth = totalWidth
-    viewer.__cdmIconHeight = totalHeight
+    local snappedWidth = PixelSnap(totalWidth)
+    local snappedHeight = PixelSnap(totalHeight)
+    viewer.__cdmIconWidth = snappedWidth
+    viewer.__cdmIconHeight = snappedHeight
     viewer.__cdmLastGrowthDirection = directionKey
     viewer.__cdmLastAppearanceKey = appearanceKey
 
     if not InCombatLockdown() then
         viewer.__cdmLayoutSuppressed = (viewer.__cdmLayoutSuppressed or 0) + 1
-        viewer:SetSize(totalWidth, totalHeight)
+        viewer:SetSize(snappedWidth, snappedHeight)
         viewer.__cdmLayoutSuppressed = viewer.__cdmLayoutSuppressed - 1
         if viewer.__cdmLayoutSuppressed <= 0 then
             viewer.__cdmLayoutSuppressed = nil
         end
-    end
-
-    if layoutType == "VERTICAL" then
-        AdjustViewerAnchor(viewer, anchorShift, 0)
-    else
-        AdjustViewerAnchor(viewer, 0, anchorShift)
     end
 
     finishLayout()
@@ -492,11 +589,46 @@ function IconViewers:RescanViewer(viewer)
     PrepareIconOrder(name, icons)
     local count = #icons
 
-    local iconWidth, iconHeight = ComputeIconDimensions(settings)
-    local spacing = ComputeSpacing(settings)
-    local primary, secondary, rowLimit = ResolveDirections(name, settings)
+    local shownIcons = icons
+    local shownCount = count
+    if collectAllIcons then
+        shownIcons = {}
+        for _, icon in ipairs(icons) do
+            if icon and icon.IsShown and icon:IsShown() then
+                shownIcons[#shownIcons + 1] = icon
+            end
+        end
+        shownCount = #shownIcons
+    end
+
+    -- Cache expensive computations
+    local cacheKey = string.format("%s_%s_%s", name, tostring(settings.iconSize or 32), tostring(settings.spacing or 4))
+    local cached = viewer.__cdmLayoutCache
+    if not cached or cached.cacheKey ~= cacheKey then
+        local baseIconWidth, baseIconHeight = ComputeIconDimensions(settings)
+        cached = {
+            cacheKey = cacheKey,
+            baseIconWidth = baseIconWidth,
+            baseIconHeight = baseIconHeight,
+            spacing = ComputeSpacing(settings),
+            directions = {ResolveDirections(name, settings)},
+            rowDimensions = {}
+        }
+        for preload = 1, 3 do
+            local overrideSize = GetRowIconSize(settings, preload)
+            local w, h = ComputeIconDimensions(settings, overrideSize)
+            cached.rowDimensions[preload] = { width = w, height = h }
+        end
+        cached.appearanceKey = BuildAppearanceKey(cached.baseIconWidth, cached.baseIconHeight, cached.spacing, cached.rowDimensions)
+        viewer.__cdmLayoutCache = cached
+    end
+
+    local baseIconWidth, baseIconHeight = cached.baseIconWidth, cached.baseIconHeight
+    local spacing = cached.spacing
+    local primary, secondary, rowLimit = unpack(cached.directions)
     local directionKey = BuildDirectionKey(primary, secondary, rowLimit)
-    local appearanceKey = BuildAppearanceKey(iconWidth, iconHeight, spacing)
+    local rowDimensions = cached.rowDimensions
+    local appearanceKey = cached.appearanceKey
 
     if viewer.__cdmLastGrowthDirection ~= directionKey then
         viewer.__cdmLastGrowthDirection = directionKey
@@ -513,19 +645,31 @@ function IconViewers:RescanViewer(viewer)
         changed = true
     end
 
-    if name == "BuffIconCooldownViewer" and not changed and count > 1 then
-        local expectedSpacing = iconWidth + spacing - 1
-        for i = 1, count - 1 do
-            local iconA = icons[i]
-            local iconB = icons[i + 1]
-            if iconA and iconB then
-                local x1 = iconA:GetCenter()
-                local x2 = iconB:GetCenter()
-                if x1 and x2 then
-                    local actualSpacing = abs(x2 - x1)
-                    if abs(actualSpacing - expectedSpacing) > 1 then
-                        changed = true
-                        break
+    if name == "BuffIconCooldownViewer" and viewer.__cdmShownIconCount ~= shownCount then
+        viewer.__cdmShownIconCount = shownCount
+        changed = true
+    end
+
+    -- Simplified spacing check - only check first few icons and cache result
+    if name == "BuffIconCooldownViewer" and not changed and shownCount > 1 then
+        local spacingCheckKey = string.format("%d_%d", shownCount, math.floor(time() / 5)) -- Check every 5 seconds
+        if viewer.__cdmLastSpacingCheck ~= spacingCheckKey then
+            viewer.__cdmLastSpacingCheck = spacingCheckKey
+            -- Only check first 3 icon pairs for performance
+            for i = 1, min(3, shownCount - 1) do
+                local iconA = shownIcons[i]
+                local iconB = shownIcons[i + 1]
+                if iconA and iconB then
+                    local x1 = iconA:GetCenter()
+                    local x2 = iconB:GetCenter()
+                    if x1 and x2 then
+                        local widthA = (iconA.GetWidth and iconA:GetWidth()) or baseIconWidth
+                        local expectedSpacing = widthA + spacing
+                        local actualSpacing = abs(x2 - x1)
+                        if abs(actualSpacing - expectedSpacing) > 2 then -- Increased tolerance
+                            changed = true
+                            break
+                        end
                     end
                 end
             end

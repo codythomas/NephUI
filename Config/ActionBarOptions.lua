@@ -33,10 +33,47 @@ local function CreateActionBarOptions()
                     end
                 end,
             },
+            borderSize = {
+                type = "range",
+                name = "Border Thickness",
+                desc = "Thickness of the action button border (expands outward, WHITE8x8 texture)",
+                min = 0,
+                max = 6,
+                step = 1,
+                width = "full",
+                order = 3,
+                get = function()
+                    return NephUI.db.profile.actionBars.borderSize or 1
+                end,
+                set = function(_, val)
+                    NephUI.db.profile.actionBars.borderSize = val
+                    if NephUI.ActionBars and NephUI.ActionBars.RefreshAll then
+                        NephUI.ActionBars:RefreshAll()
+                    end
+                end,
+            },
+            borderColor = {
+                type = "color",
+                name = "Border Color",
+                desc = "Color of the outer border (WHITE8x8 texture)",
+                order = 4,
+                width = "full",
+                hasAlpha = true,
+                get = function()
+                    local c = NephUI.db.profile.actionBars.borderColor or {0, 0, 0, 1}
+                    return c[1], c[2], c[3], c[4] or 1
+                end,
+                set = function(_, r, g, b, a)
+                    NephUI.db.profile.actionBars.borderColor = { r, g, b, a or 1 }
+                    if NephUI.ActionBars and NephUI.ActionBars.RefreshAll then
+                        NephUI.ActionBars:RefreshAll()
+                    end
+                end,
+            },
             spacer1 = {
                 type = "description",
                 name = " ",
-                order = 3,
+                order = 5,
             },
             backdropColor = {
                 type = "color",
@@ -379,6 +416,29 @@ local function CreateActionBarOptions()
                         NephUI.db.profile.actionBars.mouseover.bars = {}
                     end
                     NephUI.db.profile.actionBars.mouseover.bars.stanceBar = val
+                    if NephUI.ActionBars and NephUI.ActionBars.RefreshAll then
+                        NephUI.ActionBars:RefreshAll()
+                    end
+                end,
+            },
+            mouseoverMicroMenu = {
+                type = "toggle",
+                name = "Micro Menu",
+                desc = "Enable mouseover for the Micro Menu",
+                order = 44,
+                get = function()
+                    local cfg = NephUI.db.profile.actionBars.mouseover
+                    local bars = cfg and cfg.bars
+                    return bars and bars.microMenu or false
+                end,
+                set = function(_, val)
+                    if not NephUI.db.profile.actionBars.mouseover then
+                        NephUI.db.profile.actionBars.mouseover = {}
+                    end
+                    if not NephUI.db.profile.actionBars.mouseover.bars then
+                        NephUI.db.profile.actionBars.mouseover.bars = {}
+                    end
+                    NephUI.db.profile.actionBars.mouseover.bars.microMenu = val
                     if NephUI.ActionBars and NephUI.ActionBars.RefreshAll then
                         NephUI.ActionBars:RefreshAll()
                     end
@@ -929,60 +989,6 @@ local function CreateActionBarOptions()
                                 NephUI.db.profile.actionBars.procGlow = {}
                             end
                             NephUI.db.profile.actionBars.procGlow.lcgThickness = val
-                                    if NephUI.ActionBarGlow and NephUI.ActionBarGlow.RefreshAll then
-                                        NephUI.ActionBarGlow:RefreshAll()
-                                    end
-                        end,
-                    },
-                    lcgXOffset = {
-                        type = "range",
-                        name = "X Offset",
-                        desc = "Horizontal offset (positive = expand outward, negative = shrink inward)",
-                        order = 34,
-                        width = "normal",
-                        min = -20,
-                        max = 20,
-                        step = 1,
-                        disabled = function()
-                            local procGlow = NephUI.db.profile.actionBars.procGlow
-                            return not (procGlow and procGlow.glowType and procGlow.glowType ~= "Action Button Glow")
-                        end,
-                        get = function()
-                            local procGlow = NephUI.db.profile.actionBars.procGlow
-                            return procGlow and procGlow.lcgXOffset or -7
-                        end,
-                        set = function(_, val)
-                            if not NephUI.db.profile.actionBars.procGlow then
-                                NephUI.db.profile.actionBars.procGlow = {}
-                            end
-                            NephUI.db.profile.actionBars.procGlow.lcgXOffset = val
-                                    if NephUI.ActionBarGlow and NephUI.ActionBarGlow.RefreshAll then
-                                        NephUI.ActionBarGlow:RefreshAll()
-                                    end
-                        end,
-                    },
-                    lcgYOffset = {
-                        type = "range",
-                        name = "Y Offset",
-                        desc = "Vertical offset (positive = expand outward, negative = shrink inward)",
-                        order = 35,
-                        width = "normal",
-                        min = -20,
-                        max = 20,
-                        step = 1,
-                        disabled = function()
-                            local procGlow = NephUI.db.profile.actionBars.procGlow
-                            return not (procGlow and procGlow.glowType and procGlow.glowType ~= "Action Button Glow")
-                        end,
-                        get = function()
-                            local procGlow = NephUI.db.profile.actionBars.procGlow
-                            return procGlow and procGlow.lcgYOffset or -7
-                        end,
-                        set = function(_, val)
-                            if not NephUI.db.profile.actionBars.procGlow then
-                                NephUI.db.profile.actionBars.procGlow = {}
-                            end
-                            NephUI.db.profile.actionBars.procGlow.lcgYOffset = val
                                     if NephUI.ActionBarGlow and NephUI.ActionBarGlow.RefreshAll then
                                         NephUI.ActionBarGlow:RefreshAll()
                                     end

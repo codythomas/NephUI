@@ -68,21 +68,67 @@ local function GetIconCountFont(icon)
     return nil
 end
 
-local function CreateBorder(frame)
-    if frame.border then return frame.border end
+local function StripTextureMasks(texture)
+	if not texture or not texture.GetMaskTexture then return end
 
-    local bord = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-    bord:SetPoint("TOPLEFT", frame, -1, 1)
-    bord:SetPoint("BOTTOMRIGHT", frame, 1, -1)
-    bord:SetBackdrop({
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-    })
-    bord:SetBackdropBorderColor(0, 0, 0, 1)
-    bord:SetFrameLevel(frame:GetFrameLevel() + 1)
+	local i = 1
+	local mask = texture:GetMaskTexture(i)
+	while mask do
+		texture:RemoveMaskTexture(mask)
+		i = i + 1
+		mask = texture:GetMaskTexture(i)
+	end
+end
 
-    frame.border = bord
-    return bord
+local function NeutralizeAtlasTexture(texture)
+    if not texture then return end
+
+    if texture.SetAtlas then
+        texture:SetAtlas(nil)
+        if not texture.__nuiAtlasNeutralized then
+            texture.__nuiAtlasNeutralized = true
+            hooksecurefunc(texture, "SetAtlas", function(self)
+                if self.SetTexture then
+                    self:SetTexture(nil)
+                end
+                if self.SetAlpha then
+                    self:SetAlpha(0)
+                end
+            end)
+        end
+    end
+
+    if texture.SetTexture then
+        texture:SetTexture(nil)
+    end
+
+    if texture.SetAlpha then
+        texture:SetAlpha(0)
+    end
+end
+
+local function HideDebuffBorder(icon)
+    if not icon then return end
+
+    if icon.DebuffBorder then
+        NeutralizeAtlasTexture(icon.DebuffBorder)
+    end
+
+    local name = icon.GetName and icon:GetName()
+    if name and _G[name .. "DebuffBorder"] then
+        NeutralizeAtlasTexture(_G[name .. "DebuffBorder"])
+    end
+
+    if icon.GetRegions then
+        for _, region in ipairs({ icon:GetRegions() }) do
+            if region and region.IsObjectType and region:IsObjectType("Texture") then
+                local regionName = region.GetName and region:GetName()
+                if regionName and regionName:find("DebuffBorder", 1, true) then
+                    NeutralizeAtlasTexture(region)
+                end
+            end
+        end
+    end
 end
 
 -- Icon Skinning
@@ -94,7 +140,6 @@ function IconViewers:SkinIcon(icon, settings)
 
     -- Calculate icon dimensions from iconSize and aspectRatio (crop slider)
     local iconSize = settings.iconSize or 40
-    -- Add 0.1 behind the scenes for better rendering (user cannot see or adjust this)
     iconSize = iconSize + 0.01
     local aspectRatioValue = 1.0 -- Default to square
     
@@ -126,17 +171,21 @@ function IconViewers:SkinIcon(icon, settings)
         end
     end
     
-    local padding   = settings.padding or 5
+    -- Padding is no longer applied; Blizzard masks are stripped instead
+    local padding   = 0
     local zoom      = settings.zoom or 0
     local border    = icon.__CDM_Border
-    local cdPadding = padding * 0.65
+    local cdPadding = 0
 
     -- This prevents stretching by cropping the texture to match the container aspect ratio
     iconTexture:ClearAllPoints()
     
-    -- Fill the container
-    iconTexture:SetPoint("TOPLEFT", icon, "TOPLEFT", padding, -padding)
-    iconTexture:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", -padding, padding)
+    -- Fill the container completely
+    iconTexture:SetPoint("TOPLEFT", icon, "TOPLEFT", 0, 0)
+    iconTexture:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 0, 0)
+
+    -- Remove Blizzard mask textures so the icon fills fully
+    StripTextureMasks(iconTexture)
     
     -- Calculate texture coordinates based on aspect ratio to prevent stretching
     -- Use the same aspectRatioValue calculated above
@@ -197,6 +246,11 @@ function IconViewers:SkinIcon(icon, settings)
         icon.Cooldown:ClearAllPoints()
         icon.Cooldown:SetPoint("TOPLEFT", icon, "TOPLEFT", cdPadding, -cdPadding)
         icon.Cooldown:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", -cdPadding, cdPadding)
+        -- Match swipe to unmasked icon bounds
+        icon.Cooldown:SetSwipeColor(0, 0, 0, 0.8)
+        icon.Cooldown:SetDrawEdge(true)
+        icon.Cooldown:SetDrawSwipe(true)
+        icon.Cooldown:SetSwipeTexture("Interface\\Buttons\\WHITE8X8")
     end
 
     -- Pandemic icon
@@ -212,22 +266,34 @@ function IconViewers:SkinIcon(icon, settings)
 
     if picon and picon.ClearAllPoints then
         picon:ClearAllPoints()
-        picon:SetPoint("TOPLEFT", icon, "TOPLEFT", padding, -padding)
-        picon:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", -padding, padding)
+        picon:SetPoint("TOPLEFT", icon, "TOPLEFT", 0, 0)
+        picon:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 0, 0)
     end
 
     -- Out of range highlight
     local oor = icon.OutOfRange or icon.outOfRange or icon.oor
     if oor and oor.ClearAllPoints then
         oor:ClearAllPoints()
-        oor:SetPoint("TOPLEFT", icon, "TOPLEFT", padding, -padding)
-        oor:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", -padding, padding)
+        oor:SetPoint("TOPLEFT", icon, "TOPLEFT", 0, 0)
+        oor:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 0, 0)
     end
 
     -- Charge/stack text
     local fs = GetIconCountFont(icon)
     if fs and fs.ClearAllPoints then
         fs:ClearAllPoints()
+
+        -- Keep charge/stack text above proc glows
+        local parentFrame = fs.GetParent and fs:GetParent()
+        if parentFrame and parentFrame.SetFrameLevel and icon.GetFrameLevel then
+            local iconLevel = (icon.GetFrameLevel and icon:GetFrameLevel()) or 0
+            local getParentLevel = parentFrame.GetFrameLevel
+            local currentLevel = (getParentLevel and getParentLevel(parentFrame)) or 0
+            parentFrame:SetFrameLevel(math.max(currentLevel, iconLevel + 10))
+        end
+        if fs.SetDrawLayer then
+            fs:SetDrawLayer("OVERLAY", 7)
+        end
 
         local point   = settings.chargeTextAnchor or "BOTTOMRIGHT"
         if point == "MIDDLE" then point = "CENTER" end
@@ -246,6 +312,9 @@ function IconViewers:SkinIcon(icon, settings)
 
     -- Strip Blizzard overlay
     StripBlizzardOverlay(icon)
+
+    -- Hide Blizzard debuff border (BuffIconCooldownViewer uses DebuffBorder as well)
+    HideDebuffBorder(icon)
 
     -- Border
     if icon.IsForbidden and icon:IsForbidden() then
@@ -272,7 +341,15 @@ function IconViewers:SkinIcon(icon, settings)
         icon.__cdmBorderPending = nil
     end
 
-    local edgeSize = tonumber(settings.borderSize) or 1
+	local edgeSize = tonumber(settings.borderSize) or 1
+	if NephUI and NephUI.ScaleBorder then
+		edgeSize = NephUI:ScaleBorder(edgeSize)
+	elseif NephUI and NephUI.Scale then
+		edgeSize = NephUI:Scale(edgeSize)
+		edgeSize = math.floor(edgeSize + 0.5)
+	else
+		edgeSize = math.floor(edgeSize + 0.5)
+	end
     
     -- Helper function to safely set backdrop (defers in combat to avoid secret value errors)
     local function SafeSetBackdrop(frame, backdropInfo)
@@ -438,6 +515,9 @@ function IconViewers:SkinIcon(icon, settings)
                 border:Show()
                 local r, g, b, a = unpack(settings.borderColor or { 0, 0, 0, 1 })
                 border:SetBackdropBorderColor(r, g, b, a or 1)
+                border:ClearAllPoints()
+                border:SetPoint("TOPLEFT", iconTexture, "TOPLEFT", -edgeSize, edgeSize)
+                border:SetPoint("BOTTOMRIGHT", iconTexture, "BOTTOMRIGHT", edgeSize, -edgeSize)
             else
                 -- If deferred, hide for now (will show when backdrop is set)
                 if not border.__cdmBackdropPending then
@@ -494,4 +574,3 @@ if NephUI.ProcGlow and NephUI.ProcGlow.UpdateButtonGlow then
         return result
     end
 end
-

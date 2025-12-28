@@ -99,9 +99,7 @@ local function CreateCastBarOptions()
                         name = "Height",
                         order = 12,
                         width = "normal",
-                        min = 6,
-                        max = 80,
-                        step = 1,
+                        min = 6, max = 100, step = 1,
                         get = function() return NephUI.db.profile.castBar.height end,
                         set = function(_, val)
                             NephUI.db.profile.castBar.height = val
@@ -114,9 +112,7 @@ local function CreateCastBarOptions()
                         desc = "0 = automatic width based on icons",
                         order = 13,
                         width = "normal",
-                        min = 0,
-                        max = 1000,
-                        step = 1,
+                        min = 0, max = 1000, step = 1,
                         get = function() return NephUI.db.profile.castBar.width end,
                         set = function(_, val)
                             NephUI.db.profile.castBar.width = val
@@ -129,9 +125,7 @@ local function CreateCastBarOptions()
                         desc = "Distance from the icon viewer",
                         order = 14,
                         width = "full",
-                        min = -500,
-                        max = 500,
-                        step = 1,
+                        min = -500, max = 500, step = 1,
                         get = function() return NephUI.db.profile.castBar.offsetY end,
                         set = function(_, val)
                             NephUI.db.profile.castBar.offsetY = val
@@ -144,16 +138,14 @@ local function CreateCastBarOptions()
                         desc = "Horizontal distance from the anchor point",
                         order = 15,
                         width = "full",
-                        min = -500,
-                        max = 500,
-                        step = 1,
+                        min = -500, max = 500, step = 1,
                         get = function() return NephUI.db.profile.castBar.offsetX or 0 end,
                         set = function(_, val)
                             NephUI.db.profile.castBar.offsetX = val
                             NephUI:UpdateCastBarLayout()
                         end,
                     },
-
+                    
                     appearanceHeader = {
                         type = "header",
                         name = "Appearance",
@@ -172,7 +164,7 @@ local function CreateCastBarOptions()
                             end
                             return names
                         end,
-                        get = function()
+                        get = function() 
                             local override = NephUI.db.profile.castBar.texture
                             if override and override ~= "" then
                                 return override
@@ -201,10 +193,10 @@ local function CreateCastBarOptions()
                         type = "color",
                         name = "Custom Color",
                         desc = "Used when class color is disabled",
-                        order = 23,
-                        width = "normal",
-                        hasAlpha = true,
-                        get = function()
+                    order = 23,
+                    width = "normal",
+                    hasAlpha = true,
+                    get = function()
                             local c = NephUI.db.profile.castBar.color
                             if c then
                                 return c[1], c[2], c[3], c[4] or 1
@@ -240,9 +232,7 @@ local function CreateCastBarOptions()
                         name = "Text Size",
                         order = 25,
                         width = "normal",
-                        min = 6,
-                        max = 20,
-                        step = 1,
+                        min = 6, max = 20, step = 1,
                         get = function() return NephUI.db.profile.castBar.textSize end,
                         set = function(_, val)
                             NephUI.db.profile.castBar.textSize = val
@@ -258,6 +248,18 @@ local function CreateCastBarOptions()
                         get = function() return NephUI.db.profile.castBar.showTimeText ~= false end,
                         set = function(_, val)
                             NephUI.db.profile.castBar.showTimeText = val
+                            NephUI:UpdateCastBarLayout()
+                        end,
+                    },
+                    showIcon = {
+                        type = "toggle",
+                        name = "Show Cast Icon",
+                        desc = "Hide the spell icon if you prefer a bar-only look",
+                        order = 27,
+                        width = "normal",
+                        get = function() return NephUI.db.profile.castBar.showIcon ~= false end,
+                        set = function(_, val)
+                            NephUI.db.profile.castBar.showIcon = val
                             NephUI:UpdateCastBarLayout()
                         end,
                     },
@@ -288,8 +290,7 @@ local function CreateCastBarOptions()
                     testCast = {
                         type  = "execute",
                         name  = "Test Target Cast Bar",
-                        desc  =
-                        "Show a fake cast so you can preview and tweak the bar without a target casting. Unit Must Be active to test.",
+                        desc  = "Show a fake cast so you can preview and tweak the bar without a target casting. Unit Must Be active to test.",
                         order = 3,
                         func  = function()
                             NephUI:ShowTestTargetCastBar()
@@ -347,9 +348,7 @@ local function CreateCastBarOptions()
                         name = "Height",
                         order = 12,
                         width = "normal",
-                        min = 6,
-                        max = 80,
-                        step = 1,
+                        min = 6, max = 40, step = 1,
                         get = function() return NephUI.db.profile.targetCastBar.height end,
                         set = function(_, val)
                             NephUI.db.profile.targetCastBar.height = val
@@ -362,9 +361,7 @@ local function CreateCastBarOptions()
                         desc = "0 = automatic width based on anchor",
                         order = 13,
                         width = "normal",
-                        min = 0,
-                        max = 1000,
-                        step = 1,
+                        min = 0, max = 1000, step = 1,
                         get = function() return NephUI.db.profile.targetCastBar.width end,
                         set = function(_, val)
                             NephUI.db.profile.targetCastBar.width = val
@@ -377,9 +374,7 @@ local function CreateCastBarOptions()
                         desc = "Distance from the anchor frame",
                         order = 14,
                         width = "full",
-                        min = -500,
-                        max = 500,
-                        step = 1,
+                        min = -500, max = 500, step = 1,
                         get = function() return NephUI.db.profile.targetCastBar.offsetY end,
                         set = function(_, val)
                             NephUI.db.profile.targetCastBar.offsetY = val
@@ -392,16 +387,14 @@ local function CreateCastBarOptions()
                         desc = "Horizontal distance from the anchor point",
                         order = 15,
                         width = "full",
-                        min = -500,
-                        max = 500,
-                        step = 1,
+                        min = -500, max = 500, step = 1,
                         get = function() return NephUI.db.profile.targetCastBar.offsetX or 0 end,
                         set = function(_, val)
                             NephUI.db.profile.targetCastBar.offsetX = val
                             NephUI:UpdateTargetCastBarLayout()
                         end,
                     },
-
+                    
                     appearanceHeader = {
                         type = "header",
                         name = "Appearance",
@@ -420,7 +413,7 @@ local function CreateCastBarOptions()
                             end
                             return names
                         end,
-                        get = function()
+                        get = function() 
                             local override = NephUI.db.profile.targetCastBar.texture
                             if override and override ~= "" then
                                 return override
@@ -435,20 +428,60 @@ local function CreateCastBarOptions()
                     },
                     barColor = {
                         type = "color",
-                        name = "Custom Color",
-                        desc = "Color of the cast bar",
+                        name = "Interruptible Color",
+                        desc = "Color when the cast can be interrupted",
                         order = 22,
                         width = "normal",
                         hasAlpha = true,
                         get = function()
-                            local c = NephUI.db.profile.targetCastBar.color
+                            local c = NephUI.db.profile.targetCastBar.interruptibleColor or NephUI.db.profile.targetCastBar.color
                             if c then
                                 return c[1], c[2], c[3], c[4] or 1
                             end
                             return 1, 0, 0, 1
                         end,
                         set = function(_, r, g, b, a)
+                            NephUI.db.profile.targetCastBar.interruptibleColor = { r, g, b, a }
+                            -- keep base color in sync for legacy fallback
                             NephUI.db.profile.targetCastBar.color = { r, g, b, a }
+                            NephUI:UpdateTargetCastBarLayout()
+                        end,
+                    },
+                    nonInterruptibleColor = {
+                        type = "color",
+                        name = "Non-Interruptible Color",
+                        desc = "Color when the cast cannot be interrupted",
+                        order = 23,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.targetCastBar.nonInterruptibleColor
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 0.6, 0.6, 0.6, 1
+                        end,
+                        set = function(_, r, g, b, a)
+                            NephUI.db.profile.targetCastBar.nonInterruptibleColor = { r, g, b, a }
+                            NephUI:UpdateTargetCastBarLayout()
+                        end,
+                    },
+                    interruptedColor = {
+                        type = "color",
+                        name = "Interrupted Color",
+                        desc = "Color briefly used when the cast is interrupted",
+                        order = 24,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.targetCastBar.interruptedColor
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 0.8, 0.2, 0.2, 1
+                        end,
+                        set = function(_, r, g, b, a)
+                            NephUI.db.profile.targetCastBar.interruptedColor = { r, g, b, a }
                             NephUI:UpdateTargetCastBarLayout()
                         end,
                     },
@@ -456,7 +489,7 @@ local function CreateCastBarOptions()
                         type = "color",
                         name = "Background Color",
                         desc = "Color of the bar background",
-                        order = 23,
+                        order = 25,
                         width = "normal",
                         hasAlpha = true,
                         get = function()
@@ -474,11 +507,9 @@ local function CreateCastBarOptions()
                     textSize = {
                         type = "range",
                         name = "Text Size",
-                        order = 24,
+                        order = 26,
                         width = "normal",
-                        min = 6,
-                        max = 20,
-                        step = 1,
+                        min = 6, max = 20, step = 1,
                         get = function() return NephUI.db.profile.targetCastBar.textSize end,
                         set = function(_, val)
                             NephUI.db.profile.targetCastBar.textSize = val
@@ -489,11 +520,23 @@ local function CreateCastBarOptions()
                         type = "toggle",
                         name = "Show Time Text",
                         desc = "Show the remaining cast time on the cast bar",
-                        order = 25,
+                        order = 27,
                         width = "normal",
                         get = function() return NephUI.db.profile.targetCastBar.showTimeText ~= false end,
                         set = function(_, val)
                             NephUI.db.profile.targetCastBar.showTimeText = val
+                            NephUI:UpdateTargetCastBarLayout()
+                        end,
+                    },
+                    showIcon = {
+                        type = "toggle",
+                        name = "Show Cast Icon",
+                        desc = "Hide the spell icon if you prefer a bar-only look",
+                        order = 28,
+                        width = "normal",
+                        get = function() return NephUI.db.profile.targetCastBar.showIcon ~= false end,
+                        set = function(_, val)
+                            NephUI.db.profile.targetCastBar.showIcon = val
                             NephUI:UpdateTargetCastBarLayout()
                         end,
                     },
@@ -524,8 +567,7 @@ local function CreateCastBarOptions()
                     testCast = {
                         type  = "execute",
                         name  = "Test Focus Cast Bar",
-                        desc  =
-                        "Show a fake cast so you can preview and tweak the bar without a focus casting. Unit Must Be active to test.",
+                        desc  = "Show a fake cast so you can preview and tweak the bar without a focus casting. Unit Must Be active to test.",
                         order = 3,
                         func  = function()
                             NephUI:ShowTestFocusCastBar()
@@ -583,9 +625,7 @@ local function CreateCastBarOptions()
                         name = "Height",
                         order = 12,
                         width = "normal",
-                        min = 6,
-                        max = 80,
-                        step = 1,
+                        min = 6, max = 40, step = 1,
                         get = function() return NephUI.db.profile.focusCastBar.height end,
                         set = function(_, val)
                             NephUI.db.profile.focusCastBar.height = val
@@ -598,9 +638,7 @@ local function CreateCastBarOptions()
                         desc = "0 = automatic width based on anchor",
                         order = 13,
                         width = "normal",
-                        min = 0,
-                        max = 1000,
-                        step = 1,
+                        min = 0, max = 1000, step = 1,
                         get = function() return NephUI.db.profile.focusCastBar.width end,
                         set = function(_, val)
                             NephUI.db.profile.focusCastBar.width = val
@@ -613,9 +651,7 @@ local function CreateCastBarOptions()
                         desc = "Distance from the anchor frame",
                         order = 14,
                         width = "full",
-                        min = -500,
-                        max = 500,
-                        step = 1,
+                        min = -500, max = 500, step = 1,
                         get = function() return NephUI.db.profile.focusCastBar.offsetY end,
                         set = function(_, val)
                             NephUI.db.profile.focusCastBar.offsetY = val
@@ -628,16 +664,14 @@ local function CreateCastBarOptions()
                         desc = "Horizontal distance from the anchor point",
                         order = 15,
                         width = "full",
-                        min = -500,
-                        max = 500,
-                        step = 1,
+                        min = -500, max = 500, step = 1,
                         get = function() return NephUI.db.profile.focusCastBar.offsetX or 0 end,
                         set = function(_, val)
                             NephUI.db.profile.focusCastBar.offsetX = val
                             NephUI:UpdateFocusCastBarLayout()
                         end,
                     },
-
+                    
                     appearanceHeader = {
                         type = "header",
                         name = "Appearance",
@@ -656,7 +690,7 @@ local function CreateCastBarOptions()
                             end
                             return names
                         end,
-                        get = function()
+                        get = function() 
                             local override = NephUI.db.profile.focusCastBar.texture
                             if override and override ~= "" then
                                 return override
@@ -671,20 +705,60 @@ local function CreateCastBarOptions()
                     },
                     barColor = {
                         type = "color",
-                        name = "Custom Color",
-                        desc = "Color of the cast bar",
+                        name = "Interruptible Color",
+                        desc = "Color when the cast can be interrupted",
                         order = 22,
                         width = "normal",
                         hasAlpha = true,
                         get = function()
-                            local c = NephUI.db.profile.focusCastBar.color
+                            local c = NephUI.db.profile.focusCastBar.interruptibleColor or NephUI.db.profile.focusCastBar.color
                             if c then
                                 return c[1], c[2], c[3], c[4] or 1
                             end
                             return 1, 0, 0, 1
                         end,
                         set = function(_, r, g, b, a)
+                            NephUI.db.profile.focusCastBar.interruptibleColor = { r, g, b, a }
+                            -- keep base color in sync for legacy fallback
                             NephUI.db.profile.focusCastBar.color = { r, g, b, a }
+                            NephUI:UpdateFocusCastBarLayout()
+                        end,
+                    },
+                    nonInterruptibleColor = {
+                        type = "color",
+                        name = "Non-Interruptible Color",
+                        desc = "Color when the cast cannot be interrupted",
+                        order = 23,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.focusCastBar.nonInterruptibleColor
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 0.6, 0.6, 0.6, 1
+                        end,
+                        set = function(_, r, g, b, a)
+                            NephUI.db.profile.focusCastBar.nonInterruptibleColor = { r, g, b, a }
+                            NephUI:UpdateFocusCastBarLayout()
+                        end,
+                    },
+                    interruptedColor = {
+                        type = "color",
+                        name = "Interrupted Color",
+                        desc = "Color briefly used when the cast is interrupted",
+                        order = 24,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.focusCastBar.interruptedColor
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 0.8, 0.2, 0.2, 1
+                        end,
+                        set = function(_, r, g, b, a)
+                            NephUI.db.profile.focusCastBar.interruptedColor = { r, g, b, a }
                             NephUI:UpdateFocusCastBarLayout()
                         end,
                     },
@@ -692,7 +766,7 @@ local function CreateCastBarOptions()
                         type = "color",
                         name = "Background Color",
                         desc = "Color of the bar background",
-                        order = 23,
+                        order = 25,
                         width = "normal",
                         hasAlpha = true,
                         get = function()
@@ -710,11 +784,9 @@ local function CreateCastBarOptions()
                     textSize = {
                         type = "range",
                         name = "Text Size",
-                        order = 24,
+                        order = 26,
                         width = "normal",
-                        min = 6,
-                        max = 20,
-                        step = 1,
+                        min = 6, max = 20, step = 1,
                         get = function() return NephUI.db.profile.focusCastBar.textSize end,
                         set = function(_, val)
                             NephUI.db.profile.focusCastBar.textSize = val
@@ -725,12 +797,247 @@ local function CreateCastBarOptions()
                         type = "toggle",
                         name = "Show Time Text",
                         desc = "Show the remaining cast time on the cast bar",
-                        order = 25,
+                        order = 27,
                         width = "normal",
                         get = function() return NephUI.db.profile.focusCastBar.showTimeText ~= false end,
                         set = function(_, val)
                             NephUI.db.profile.focusCastBar.showTimeText = val
                             NephUI:UpdateFocusCastBarLayout()
+                        end,
+                    },
+                    showIcon = {
+                        type = "toggle",
+                        name = "Show Cast Icon",
+                        desc = "Hide the spell icon if you prefer a bar-only look",
+                        order = 28,
+                        width = "normal",
+                        get = function() return NephUI.db.profile.focusCastBar.showIcon ~= false end,
+                        set = function(_, val)
+                            NephUI.db.profile.focusCastBar.showIcon = val
+                            NephUI:UpdateFocusCastBarLayout()
+                        end,
+                    },
+                },
+            },
+            boss = {
+                type = "group",
+                name = "Boss",
+                order = 4,
+                args = {
+                    header = {
+                        type = "header",
+                        name = "Boss Cast Bar Settings",
+                        order = 1,
+                    },
+                    enabled = {
+                        type = "toggle",
+                        name = "Enable Boss Cast Bars",
+                        desc = "Show cast bars when boss units are casting or channeling spells",
+                        width = "full",
+                        order = 2,
+                        get = function() return NephUI.db.profile.bossCastBar.enabled end,
+                        set = function(_, val)
+                            NephUI.db.profile.bossCastBar.enabled = val
+                            NephUI:UpdateAllBossCastBarLayouts()
+                        end,
+                    },
+                    testCast = {
+                        type  = "execute",
+                        name  = "Test Boss Cast Bars",
+                        desc  = "Show fake casts on boss frames so you can preview and tweak the bars. Boss frames must be in preview mode.",
+                        order = 3,
+                        func  = function()
+                            NephUI:ShowTestBossCastBars()
+                        end,
+                    },
+                    positionHeader = {
+                        type = "header",
+                        name = "Position & Size",
+                        order = 10,
+                    },
+                    anchorPoint = {
+                        type = "select",
+                        name = "Anchor Point",
+                        desc = "Which point of the attached frame to anchor to",
+                        order = 12,
+                        width = "full",
+                        values = {
+                            ["CENTER"] = "Center",
+                            ["BOTTOM"] = "Bottom",
+                            ["TOP"] = "Top",
+                        },
+                        get = function() return NephUI.db.profile.bossCastBar.anchorPoint or "BOTTOM" end,
+                        set = function(_, val)
+                            NephUI.db.profile.bossCastBar.anchorPoint = val
+                            NephUI:UpdateAllBossCastBarLayouts()
+                        end,
+                    },
+                    height = {
+                        type = "range",
+                        name = "Height",
+                        order = 13,
+                        width = "normal",
+                        min = 6, max = 40, step = 1,
+                        get = function() return NephUI.db.profile.bossCastBar.height end,
+                        set = function(_, val)
+                            NephUI.db.profile.bossCastBar.height = val
+                            NephUI:UpdateAllBossCastBarLayouts()
+                        end,
+                    },
+                    width = {
+                        type = "range",
+                        name = "Width",
+                        desc = "0 = automatic width based on anchor",
+                        order = 14,
+                        width = "normal",
+                        min = 0, max = 1000, step = 1,
+                        get = function() return NephUI.db.profile.bossCastBar.width end,
+                        set = function(_, val)
+                            NephUI.db.profile.bossCastBar.width = val
+                            NephUI:UpdateAllBossCastBarLayouts()
+                        end,
+                    },
+                    offsetX = {
+                        type = "range",
+                        name = "Horizontal Offset",
+                        order = 15,
+                        width = "normal",
+                        min = -200, max = 200, step = 1,
+                        get = function() return NephUI.db.profile.bossCastBar.offsetX or 0 end,
+                        set = function(_, val)
+                            NephUI.db.profile.bossCastBar.offsetX = val
+                            NephUI:UpdateAllBossCastBarLayouts()
+                        end,
+                    },
+                    offsetY = {
+                        type = "range",
+                        name = "Vertical Offset",
+                        order = 16,
+                        width = "normal",
+                        min = -100, max = 100, step = 1,
+                        get = function() return NephUI.db.profile.bossCastBar.offsetY or -1 end,
+                        set = function(_, val)
+                            NephUI.db.profile.bossCastBar.offsetY = val
+                            NephUI:UpdateAllBossCastBarLayouts()
+                        end,
+                    },
+                    appearanceHeader = {
+                        type = "header",
+                        name = "Appearance",
+                        order = 20,
+                    },
+                    texture = {
+                        type = "select",
+                        name = "Bar Texture",
+                        desc = "Texture used for the cast bar",
+                        order = 21,
+                        width = "full",
+                        dialogControl = "LSM30_Statusbar",
+                        values = LSM:HashTable("statusbar"),
+                        get = function() return NephUI.db.profile.bossCastBar.texture end,
+                        set = function(_, val)
+                            NephUI.db.profile.bossCastBar.texture = val
+                            NephUI:UpdateAllBossCastBarLayouts()
+                        end,
+                    },
+                    interruptibleColor = {
+                        type = "color",
+                        name = "Interruptible Color",
+                        desc = "Color used for interruptible casts",
+                        order = 22,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.bossCastBar.interruptibleColor
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 0.5, 0.5, 1.0, 1.0
+                        end,
+                        set = function(_, r, g, b, a)
+                            NephUI.db.profile.bossCastBar.interruptibleColor = { r, g, b, a }
+                            NephUI:UpdateAllBossCastBarLayouts()
+                        end,
+                    },
+                    nonInterruptibleColor = {
+                        type = "color",
+                        name = "Non-Interruptible Color",
+                        desc = "Color used for non-interruptible casts",
+                        order = 23,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.bossCastBar.nonInterruptibleColor
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 0.6, 0.6, 0.6, 1.0
+                        end,
+                        set = function(_, r, g, b, a)
+                            NephUI.db.profile.bossCastBar.nonInterruptibleColor = { r, g, b, a }
+                            NephUI:UpdateAllBossCastBarLayouts()
+                        end,
+                    },
+                    interruptedColor = {
+                        type = "color",
+                        name = "Interrupted Color",
+                        desc = "Color briefly used when the cast is interrupted",
+                        order = 24,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.bossCastBar.interruptedColor
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 0.8, 0.2, 0.2, 1.0
+                        end,
+                        set = function(_, r, g, b, a)
+                            NephUI.db.profile.bossCastBar.interruptedColor = { r, g, b, a }
+                            NephUI:UpdateAllBossCastBarLayouts()
+                        end,
+                    },
+                    bgColor = {
+                        type = "color",
+                        name = "Background Color",
+                        desc = "Color of the bar background",
+                        order = 25,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.bossCastBar.bgColor
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 0.1, 0.1, 0.1, 1
+                        end,
+                        set = function(_, r, g, b, a)
+                            NephUI.db.profile.bossCastBar.bgColor = { r, g, b, a }
+                            NephUI:UpdateAllBossCastBarLayouts()
+                        end,
+                    },
+                    showTimeText = {
+                        type = "toggle",
+                        name = "Show Time Text",
+                        desc = "Show the remaining cast time on the cast bar",
+                        order = 27,
+                        width = "normal",
+                        get = function() return NephUI.db.profile.bossCastBar.showTimeText ~= false end,
+                        set = function(_, val)
+                            NephUI.db.profile.bossCastBar.showTimeText = val
+                            NephUI:UpdateAllBossCastBarLayouts()
+                        end,
+                    },
+                    showIcon = {
+                        type = "toggle",
+                        name = "Show Cast Icon",
+                        desc = "Hide the spell icon if you prefer a bar-only look",
+                        order = 28,
+                        width = "normal",
+                        get = function() return NephUI.db.profile.bossCastBar.showIcon ~= false end,
+                        set = function(_, val)
+                            NephUI.db.profile.bossCastBar.showIcon = val
+                            NephUI:UpdateAllBossCastBarLayouts()
                         end,
                     },
                 },
@@ -740,3 +1047,4 @@ local function CreateCastBarOptions()
 end
 
 ns.CreateCastBarOptions = CreateCastBarOptions
+

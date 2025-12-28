@@ -5,7 +5,7 @@ if not NephUI then
 	error("NephUI not found! PixelPerfect.lua must load after Main.lua")
 end
 
-local min, max, format = min, max, string.format
+local min, max, floor, format = min, max, math.floor, string.format
 
 local _G = _G
 local GetPhysicalScreenSize = GetPhysicalScreenSize
@@ -60,6 +60,10 @@ function NephUI:PixelScaleChanged(event)
 	end
 
 	NephUI:UIMult()
+	
+	if NephUI.ActionBars and NephUI.ActionBars.RefreshAll then
+		NephUI.ActionBars:RefreshAll()
+	end
 end
 
 function NephUI:Scale(x)
@@ -70,5 +74,18 @@ function NephUI:Scale(x)
 		local y = m > 1 and m or -m
 		return x - x % (x < 0 and y or -y)
 	end
+end
+
+-- Scale a border size and snap it to whole pixels (allows 0 to hide borders)
+function NephUI:ScaleBorder(borderSize)
+	local size = borderSize or 1
+	size = floor(size + 0.5)
+	if size < 0 then size = 0 end
+
+	local scaled = self:Scale(size)
+	scaled = floor(scaled + 0.5)
+	if scaled < 0 then scaled = 0 end
+
+	return scaled
 end
 

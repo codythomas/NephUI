@@ -1,8 +1,8 @@
-## Interface: 120000
+## Interface: 120000, 110207
 ## Title: NephUI
-## Notes: Customize and enhance the Blizzard Cooldown Manager
+## Notes: Lightweight UI Overhaul AddOn
 ## Author: Nephuhlim
-## Version: 1.22
+## Version: 1.33
 ## SavedVariables: NephUIDB
 ## OptionalDeps: Ace3, LibSharedMedia-3.0
 ## X-TaintLess-DisableMitigations: CUF_PROFILE_ACTIVATE_PATCH_VERSION=1
@@ -51,10 +51,13 @@ Config\CastBarOptions.lua
 Config\ChatOptions.lua
 Config\CustomIconOptions.lua
 Config\UnitFrameOptions.lua
+Config\PartyFrameOptions.lua
+Config\RaidFrameOptions.lua
 Config\ProfileOptions.lua
 Config\MinimapOptions.lua
 Config\ActionBarOptions.lua
 Config\BuffDebuffFramesOptions.lua
+Config\QOLOptions.lua
 Config.lua
 
 # Module files
@@ -62,23 +65,23 @@ Config.lua
 Modules\IconViewers\IconViewers.lua
 Modules\IconViewers\IconSkinning.lua
 Modules\IconViewers\ViewerLayout.lua
+Modules\IconViewers\BuffBarCooldownViewer.lua
 Modules\IconViewers\ProcGlow.lua
 
 # CustomIcons
 Modules\CustomIcons\CustomIcons.lua
-Modules\CustomIcons\Trinkets.lua
 
 # CastBars
 Modules\CastBars\CastBars.lua
 Modules\CastBars\PlayerCastBar.lua
 Modules\CastBars\TargetCastBar.lua
 Modules\CastBars\FocusCastBar.lua
+Modules\CastBars\BossCastBar.lua
 Modules\CastBars\EmpoweredCasts.lua
 
 # ResourceBars
 Modules\ResourceBars\ResourceDetection.lua
 Modules\ResourceBars\PrimaryPowerBar.lua
-Modules\ResourceBars\FragmentedPower.lua
 Modules\ResourceBars\SecondaryPowerBar.lua
 Modules\ResourceBars\ResourceBars.lua
 
@@ -88,13 +91,19 @@ Modules\AbsorbBars\AbsorbBars.lua
 # AutoUIScale
 Modules\AutoUIScale\AutoUIScale.lua
 
+# QOL
+Modules\QOL\QOL.lua
+
+# CharacterPanel
+Modules\CharacterPanel\CharacterPanel.lua
+
 # UnitFrames
 Modules\UnitFrames\UnitFrames.lua
 Modules\UnitFrames\Helpers.lua
 Modules\UnitFrames\Auras.lua
+Modules\UnitFrames\PowerBars.lua
 Modules\UnitFrames\FrameCreation.lua
 Modules\UnitFrames\FrameUpdates.lua
-Modules\UnitFrames\PowerBars.lua
 Modules\UnitFrames\EditMode.lua
 Modules\UnitFrames\Anchors.lua
 
@@ -110,3 +119,5 @@ Modules\ActionBars\ActionBarGlow.lua
 
 # BuffDebuffFrames
 Modules\BuffDebuffFrames\BuffDebuffFrames.lua
+Modules\PartyFrames\PartyFrames.lua
+Modules\RaidFrames\RaidFrames.lua

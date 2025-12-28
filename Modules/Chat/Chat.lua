@@ -230,6 +230,30 @@ function Chat:SkinChatFrame(chatFrame)
             if midTexture then
                 midTexture:Hide()
             end
+            local topTexture = _G[frameName .. "TopTexture"]
+            if topTexture then
+                topTexture:Hide()
+            end
+            local bottomTexture = _G[frameName .. "BottomTexture"]
+            if bottomTexture then
+                bottomTexture:Hide()
+            end
+            local topRightTexture = _G[frameName .. "TopRightTexture"]
+            if topRightTexture then
+                topRightTexture:Hide()
+            end
+            local topLeftTexture = _G[frameName .. "TopLeftTexture"]
+            if topLeftTexture then
+                topLeftTexture:Hide()
+            end
+            local bottomRightTexture = _G[frameName .. "BottomRightTexture"]
+            if bottomRightTexture then
+                bottomRightTexture:Hide()
+            end
+            local bottomLeftTexture = _G[frameName .. "BottomLeftTexture"]
+            if bottomLeftTexture then
+                bottomLeftTexture:Hide()
+            end
         end
     end
     
@@ -353,8 +377,8 @@ function Chat:SkinChatFrame(chatFrame)
                 end)
             end
             
-            -- Periodic check to ensure width stays matched
-            C_Timer.NewTicker(0.1, function()
+            -- Periodic check to ensure width stays matched (reduced frequency for performance)
+            C_Timer.NewTicker(0.5, function()
                 MatchEditBoxWidthToChatFrame()
             end)
         end

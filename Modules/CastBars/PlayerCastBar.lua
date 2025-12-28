@@ -11,6 +11,10 @@ local CastBar_OnUpdate = CastBars.CastBar_OnUpdate
 local CreateBorder = CastBars.CreateBorder
 local GetClassColor = CastBars.GetClassColor
 
+local function PixelSnap(value)
+    return math.max(0, math.floor((value or 0) + 0.5))
+end
+
 -- PLAYER CAST BAR
 
 function CastBars:GetCastBar()
@@ -26,8 +30,8 @@ function CastBars:GetCastBar()
     local height = cfg.height or 10
     bar:SetHeight(NephUI:Scale(height))
     bar:SetPoint("CENTER", anchor, anchorPoint, NephUI:Scale(cfg.offsetX or 0), NephUI:Scale(cfg.offsetY or 18))
-    -- anchor:GetWidth() returns pixels, no need to scale
-    bar:SetWidth(anchor:GetWidth())
+    -- Use pixel-snapped width from the anchor (viewer or frame)
+    bar:SetWidth(PixelSnap(anchor.__cdmIconWidth or anchor:GetWidth()))
 
     CreateBorder(bar)
 
@@ -151,14 +155,7 @@ function CastBars:UpdateCastBarLayout()
 
     local width = cfg.width or 0
     if width <= 0 then
-        width = (anchor.__cdmIconWidth or anchor:GetWidth())
-        -- Round down to handle decimal values (e.g., 100.9 -> 100) to prevent overflow
-        width = math.floor(width)
-        
-        -- Apply trim - scale padding first, then subtract from pixel width
-        local pad = NephUI:Scale(cfg.autoWidthPadding or 5.8)
-        width = width - (pad * 2)
-        if width < 0 then width = 0 end
+        width = PixelSnap(anchor.__cdmIconWidth or anchor:GetWidth())
         -- Width is already in pixels, no need to scale again
     else
         width = NephUI:Scale(width)
@@ -173,15 +170,27 @@ function CastBars:UpdateCastBarLayout()
         bar.border:SetPoint("BOTTOMRIGHT", bar, borderOffset, -borderOffset)
     end
 
+    local showIcon = cfg.showIcon ~= false
+
     -- Icon: left side
     bar.icon:ClearAllPoints()
-    bar.icon:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
-    bar.icon:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 0)
-    -- Use bar height directly (already in pixels from SetHeight)
-    bar.icon:SetWidth(bar:GetHeight())
+    if showIcon then
+        bar.icon:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
+        bar.icon:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 0)
+        -- Use bar height directly (already in pixels from SetHeight)
+        bar.icon:SetWidth(bar:GetHeight())
+        bar.icon:Show()
+    else
+        bar.icon:SetWidth(0)
+        bar.icon:Hide()
+    end
 
     bar.status:ClearAllPoints()
-    bar.status:SetPoint("TOPLEFT", bar.icon, "TOPRIGHT", 0, 0)
+    if showIcon then
+        bar.status:SetPoint("TOPLEFT", bar.icon, "TOPRIGHT", 0, 0)
+    else
+        bar.status:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
+    end
     bar.status:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, 0)
 
     bar.bg:ClearAllPoints()

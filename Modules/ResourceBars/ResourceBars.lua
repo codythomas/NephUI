@@ -1,18 +1,97 @@
 local ADDON_NAME, ns = ...
 local NephUI = ns.Addon
+local C_Timer = _G.C_Timer
+local GetTime = _G.GetTime
 
 -- Create namespace
 NephUI.ResourceBars = NephUI.ResourceBars or {}
 local ResourceBars = NephUI.ResourceBars
 
+-- Update throttling to prevent flashing and improve performance
+local lastPrimaryUpdate = 0
+local lastSecondaryUpdate = 0
+local UPDATE_THROTTLE = 0.066  -- 66ms minimum between updates (~15fps)
+
 -- Get functions from sub-modules
 local GetPrimaryResource = ResourceBars.GetPrimaryResource
 local GetSecondaryResource = ResourceBars.GetSecondaryResource
 local EnsureDemonHunterSoulBar = ResourceBars.EnsureDemonHunterSoulBar
-local StartRuneUpdateTicker = ResourceBars.StartRuneUpdateTicker
-local StopRuneUpdateTicker = ResourceBars.StopRuneUpdateTicker
-local StartSoulUpdateTicker = ResourceBars.StartSoulUpdateTicker
-local StopSoulUpdateTicker = ResourceBars.StopSoulUpdateTicker
+
+-- Soul fragments are still only exposed via Blizzard's hidden PlayerFrame bar,
+-- so we poll that bar out of band to keep our secondary bar updated.
+local soulUpdateTicker = nil
+local runeUpdateTicker = nil
+
+local function StopSoulUpdateTicker()
+    if soulUpdateTicker then
+        soulUpdateTicker:Cancel()
+        soulUpdateTicker = nil
+    end
+end
+
+local function StartSoulUpdateTicker()
+    if soulUpdateTicker then return end
+
+    -- Make sure the Blizzard soul fragments bar exists and is unhidden
+    EnsureDemonHunterSoulBar()
+
+    soulUpdateTicker = C_Timer.NewTicker(0.1, function()
+        local resource = GetSecondaryResource()
+        if resource == "SOUL" then
+            lastSecondaryUpdate = GetTime()
+            ResourceBars:UpdateSecondaryPowerBar()
+        else
+            StopSoulUpdateTicker()
+        end
+    end)
+end
+
+local function StopRuneUpdateTicker()
+    if runeUpdateTicker then
+        runeUpdateTicker:Cancel()
+        runeUpdateTicker = nil
+    end
+end
+
+local function AreRunesRecharging()
+    if type(GetRuneCooldown) ~= "function" then
+        return false
+    end
+
+    local maxRunes = UnitPowerMax("player", Enum.PowerType.Runes) or 0
+    if maxRunes <= 0 then
+        maxRunes = 6
+    end
+
+    for i = 1, maxRunes do
+        local start, duration, runeReady = GetRuneCooldown(i)
+        if not runeReady and ((duration and duration > 0) or (start and start > 0)) then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function StartRuneUpdateTicker()
+    if runeUpdateTicker then return end
+
+    runeUpdateTicker = C_Timer.NewTicker(0.1, function()
+        local cfg = NephUI.db and NephUI.db.profile and NephUI.db.profile.secondaryPowerBar
+        if cfg and cfg.enabled == false then
+            StopRuneUpdateTicker()
+            return
+        end
+
+        local resource = GetSecondaryResource()
+        if resource == Enum.PowerType.Runes and AreRunesRecharging() then
+            lastSecondaryUpdate = GetTime()
+            ResourceBars:UpdateSecondaryPowerBar()
+        else
+            StopRuneUpdateTicker()
+        end
+    end)
+end
 
 -- EVENT HANDLER
 
@@ -23,8 +102,41 @@ function ResourceBars:OnUnitPower(_, unit)
         return
     end
 
-    self:UpdatePowerBar()
-    self:UpdateSecondaryPowerBar()
+    local now = GetTime()
+    if now - lastPrimaryUpdate >= UPDATE_THROTTLE then
+        self:UpdatePowerBar()
+        lastPrimaryUpdate = now
+    end
+    if now - lastSecondaryUpdate >= UPDATE_THROTTLE then
+        self:UpdateSecondaryPowerBar()
+        lastSecondaryUpdate = now
+    end
+end
+
+function ResourceBars:OnRuneEvent()
+    local cfg = NephUI.db and NephUI.db.profile and NephUI.db.profile.secondaryPowerBar
+    if cfg and cfg.enabled == false then
+        StopRuneUpdateTicker()
+        return
+    end
+
+    local resource = GetSecondaryResource()
+    if resource ~= Enum.PowerType.Runes then
+        StopRuneUpdateTicker()
+        return
+    end
+
+    local now = GetTime()
+    if now - lastSecondaryUpdate >= UPDATE_THROTTLE then
+        lastSecondaryUpdate = now
+        self:UpdateSecondaryPowerBar()
+    end
+
+    if AreRunesRecharging() then
+        StartRuneUpdateTicker()
+    else
+        StopRuneUpdateTicker()
+    end
 end
 
 -- REFRESH
@@ -39,26 +151,32 @@ end
 function ResourceBars:OnSpecChanged()
     -- Ensure Demon Hunter soul bar is spawned when spec changes
     EnsureDemonHunterSoulBar()
-    
+
+    local now = GetTime()
+    lastPrimaryUpdate = now
+    lastSecondaryUpdate = now
     self:UpdatePowerBar()
     self:UpdateSecondaryPowerBar()
-    
-    -- Start/stop rune ticker based on class
+
     local resource = GetSecondaryResource()
-    if resource == Enum.PowerType.Runes then
-        StartRuneUpdateTicker()
-        StopSoulUpdateTicker()
-    elseif resource == "SOUL" then
+    if resource == "SOUL" then
         StartSoulUpdateTicker()
-        StopRuneUpdateTicker()
+    else
+        StopSoulUpdateTicker()
+    end
+
+    if resource == Enum.PowerType.Runes and AreRunesRecharging() then
+        StartRuneUpdateTicker()
     else
         StopRuneUpdateTicker()
-        StopSoulUpdateTicker()
     end
 end
 
 function ResourceBars:OnShapeshiftChanged()
     -- Druid form changes affect primary/secondary resources
+    local now = GetTime()
+    lastPrimaryUpdate = now
+    lastSecondaryUpdate = now
     self:UpdatePowerBar()
     self:UpdateSecondaryPowerBar()
 end
@@ -89,45 +207,44 @@ function ResourceBars:Initialize()
         ResourceBars:OnUnitPower(_, unit)
     end)
 
+    -- RUNES: rune cooldown progression does not reliably trigger UNIT_POWER_* updates,
+    -- so we listen to rune-specific events and optionally poll while runes are recharging.
+    NephUI:RegisterEvent("RUNE_POWER_UPDATE", function()
+        ResourceBars:OnRuneEvent()
+    end)
+    NephUI:RegisterEvent("RUNE_TYPE_UPDATE", function()
+        ResourceBars:OnRuneEvent()
+    end)
+
     -- Ensure Demon Hunter soul bar is spawned
     EnsureDemonHunterSoulBar()
 
-    -- Start rune ticker if we're a death knight
-    local _, class = UnitClass("player")
-    if class == "DEATHKNIGHT" then
-        StartRuneUpdateTicker()
-    end
-    
-    -- Start soul fragments ticker if we're a demon hunter with soul resource
+    -- Start/stop soul fragments polling based on the current resource
     local resource = GetSecondaryResource()
     if resource == "SOUL" then
         StartSoulUpdateTicker()
+    else
+        StopSoulUpdateTicker()
     end
+
+    if resource == Enum.PowerType.Runes and AreRunesRecharging() then
+        StartRuneUpdateTicker()
+    else
+        StopRuneUpdateTicker()
+    end
+
 
     -- Initial update (delayed to ensure anchor frames are ready)
     C_Timer.After(0.1, function()
         ResourceBars:UpdatePowerBar()
         ResourceBars:UpdateSecondaryPowerBar()
     end)
-    
+
     -- Also update after a short delay to catch any late-loading frames
     C_Timer.After(0.5, function()
         ResourceBars:UpdatePowerBar()
         ResourceBars:UpdateSecondaryPowerBar()
     end)
-    
-    -- Periodic out-of-combat update ticker (updates every 0.5 seconds when not in combat)
-    -- This ensures bars update even when UNIT_POWER_FREQUENT doesn't fire
-    -- UNIT_POWER_FREQUENT only fires frequently in combat, so we need this for out-of-combat updates
-    if not ResourceBars.updateTicker then
-        ResourceBars.updateTicker = C_Timer.NewTicker(0.5, function()
-            -- Only update when not in combat (UNIT_POWER_FREQUENT handles in-combat updates)
-            if not UnitAffectingCombat("player") then
-                ResourceBars:UpdatePowerBar()
-                ResourceBars:UpdateSecondaryPowerBar()
-            end
-        end)
-    end
 end
 
 -- Expose event handlers to main addon for backwards compatibility

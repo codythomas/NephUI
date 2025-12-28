@@ -1205,6 +1205,72 @@ local function CreateMinimapOptions()
                     end
                 end,
             },
+
+            missionsButtonOffsetX = {
+                type = "range",
+                name = "Missions Button X Offset",
+                desc = "Horizontal offset for the missions button",
+                order = 65.1,
+                width = "full",
+                min = -200,
+                max = 200,
+                step = 1,
+                get = function()
+                    if not NephUI.db or not NephUI.db.profile or not NephUI.db.profile.minimap then
+                        return 0
+                    end
+                    if not NephUI.db.profile.minimap.missionsButton then
+                        NephUI.db.profile.minimap.missionsButton = {}
+                    end
+                    return NephUI.db.profile.minimap.missionsButton.offsetX or 0
+                end,
+                set = function(_, val)
+                    if not NephUI.db or not NephUI.db.profile then return end
+                    if not NephUI.db.profile.minimap then
+                        NephUI.db.profile.minimap = {}
+                    end
+                    if not NephUI.db.profile.minimap.missionsButton then
+                        NephUI.db.profile.minimap.missionsButton = {}
+                    end
+                    NephUI.db.profile.minimap.missionsButton.offsetX = val
+                    if NephUI.Minimap and NephUI.Minimap.Refresh then
+                        NephUI.Minimap:Refresh()
+                    end
+                end,
+            },
+
+            missionsButtonOffsetY = {
+                type = "range",
+                name = "Missions Button Y Offset",
+                desc = "Vertical offset for the missions button",
+                order = 65.2,
+                width = "full",
+                min = -500,
+                max = 500,
+                step = 1,
+                get = function()
+                    if not NephUI.db or not NephUI.db.profile or not NephUI.db.profile.minimap then
+                        return 0
+                    end
+                    if not NephUI.db.profile.minimap.missionsButton then
+                        NephUI.db.profile.minimap.missionsButton = {}
+                    end
+                    return NephUI.db.profile.minimap.missionsButton.offsetY or 0
+                end,
+                set = function(_, val)
+                    if not NephUI.db or not NephUI.db.profile then return end
+                    if not NephUI.db.profile.minimap then
+                        NephUI.db.profile.minimap = {}
+                    end
+                    if not NephUI.db.profile.minimap.missionsButton then
+                        NephUI.db.profile.minimap.missionsButton = {}
+                    end
+                    NephUI.db.profile.minimap.missionsButton.offsetY = val
+                    if NephUI.Minimap and NephUI.Minimap.Refresh then
+                        NephUI.Minimap:Refresh()
+                    end
+                end,
+            },
             
             hideAddonCompartment = {
                 type = "toggle",
@@ -1234,4 +1300,3 @@ local function CreateMinimapOptions()
 end
 
 ns.CreateMinimapOptions = CreateMinimapOptions
-

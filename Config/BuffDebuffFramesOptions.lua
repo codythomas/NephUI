@@ -71,7 +71,7 @@ local function CreateTypeOptions(typeKey, displayName, order)
             },
             iconSize = {
                 type = "range",
-                name = "Icon Size",
+                name = "Icon Size (use this to also adjust spacing)",
                 desc = "Size of " .. displayName:lower() .. " icons in pixels",
                 order = 11,
                 width = "full",
@@ -97,118 +97,6 @@ local function CreateTypeOptions(typeKey, displayName, order)
                 type = "description",
                 name = " ",
                 order = 12,
-            },
-            layoutHeader = {
-                type = "header",
-                name = "Layout",
-                order = 13,
-            },
-            iconsPerRow = {
-                type = "range",
-                name = "Icons Per Row",
-                desc = "Maximum number of icons per row before wrapping to next row",
-                order = 14,
-                width = "full",
-                min = 1,
-                max = 20,
-                step = 1,
-                get = function()
-                    local db = NephUI.db.profile.buffDebuffFrames
-                    if not db or not db[typeKey] then return 12 end
-                    local layoutConfig = db[typeKey].layout or {}
-                    return layoutConfig.iconsPerRow or 12
-                end,
-                set = function(_, val)
-                    local db = NephUI.db.profile.buffDebuffFrames
-                    if not db then return end
-                    if not db[typeKey] then db[typeKey] = {} end
-                    if not db[typeKey].layout then db[typeKey].layout = {} end
-                    db[typeKey].layout.iconsPerRow = val
-                    if NephUI.BuffDebuffFrames and NephUI.BuffDebuffFrames.RefreshAll then
-                        NephUI.BuffDebuffFrames:RefreshAll()
-                    end
-                end,
-            },
-            iconSpacing = {
-                type = "range",
-                name = "Icon Spacing",
-                desc = "Space between icons horizontally",
-                order = 15,
-                width = "full",
-                min = -40,
-                max = 40,
-                step = 1,
-                get = function()
-                    local db = NephUI.db.profile.buffDebuffFrames
-                    if not db or not db[typeKey] then return 5 end
-                    local layoutConfig = db[typeKey].layout or {}
-                    return layoutConfig.iconSpacing or 5
-                end,
-                set = function(_, val)
-                    local db = NephUI.db.profile.buffDebuffFrames
-                    if not db then return end
-                    if not db[typeKey] then db[typeKey] = {} end
-                    if not db[typeKey].layout then db[typeKey].layout = {} end
-                    db[typeKey].layout.iconSpacing = val
-                    if NephUI.BuffDebuffFrames and NephUI.BuffDebuffFrames.RefreshAll then
-                        NephUI.BuffDebuffFrames:RefreshAll()
-                    end
-                end,
-            },
-            rowSpacing = {
-                type = "range",
-                name = "Row Spacing",
-                desc = "Space between rows vertically",
-                order = 16,
-                width = "full",
-                min = -40,
-                max = 40,
-                step = 1,
-                get = function()
-                    local db = NephUI.db.profile.buffDebuffFrames
-                    if not db or not db[typeKey] then return 5 end
-                    local layoutConfig = db[typeKey].layout or {}
-                    return layoutConfig.rowSpacing or 5
-                end,
-                set = function(_, val)
-                    local db = NephUI.db.profile.buffDebuffFrames
-                    if not db then return end
-                    if not db[typeKey] then db[typeKey] = {} end
-                    if not db[typeKey].layout then db[typeKey].layout = {} end
-                    db[typeKey].layout.rowSpacing = val
-                    if NephUI.BuffDebuffFrames and NephUI.BuffDebuffFrames.RefreshAll then
-                        NephUI.BuffDebuffFrames:RefreshAll()
-                    end
-                end,
-            },
-            anchorSide = {
-                type = "select",
-                name = "Anchor Side",
-                desc = "Which side of the container to anchor from",
-                order = 17,
-                width = "full",
-                values = GetAnchorPointOptions(),
-                get = function()
-                    local db = NephUI.db.profile.buffDebuffFrames
-                    if not db or not db[typeKey] then return "TOPRIGHT" end
-                    local layoutConfig = db[typeKey].layout or {}
-                    return layoutConfig.anchorSide or "TOPRIGHT"
-                end,
-                set = function(_, val)
-                    local db = NephUI.db.profile.buffDebuffFrames
-                    if not db then return end
-                    if not db[typeKey] then db[typeKey] = {} end
-                    if not db[typeKey].layout then db[typeKey].layout = {} end
-                    db[typeKey].layout.anchorSide = val
-                    if NephUI.BuffDebuffFrames and NephUI.BuffDebuffFrames.RefreshAll then
-                        NephUI.BuffDebuffFrames:RefreshAll()
-                    end
-                end,
-            },
-            spacer2 = {
-                type = "description",
-                name = " ",
-                order = 18,
             },
             countHeader = {
                 type = "header",

@@ -12,8 +12,13 @@ end
 local GetSecondaryResource = ResourceBars.GetSecondaryResource
 local GetResourceColor = ResourceBars.GetResourceColor
 local GetSecondaryResourceValue = ResourceBars.GetSecondaryResourceValue
+local GetChargedPowerPoints = ResourceBars.GetChargedPowerPoints
 local tickedPowerTypes = ResourceBars.tickedPowerTypes
 local fragmentedPowerTypes = ResourceBars.fragmentedPowerTypes
+
+local function PixelSnap(value)
+    return math.max(0, math.floor((value or 0) + 0.5))
+end
 
 -- SECONDARY POWER BAR
 
@@ -26,19 +31,18 @@ function ResourceBars:GetSecondaryPowerBar()
 
     local bar = CreateFrame("Frame", ADDON_NAME .. "SecondaryPowerBar", anchor)
     bar:SetFrameStrata("MEDIUM")
+    -- Keep the bar click-through so it never blocks PlayerFrame interactions
+    bar:EnableMouse(false)
+    bar:EnableMouseWheel(false)
+    if bar.SetMouseMotionEnabled then
+        bar:SetMouseMotionEnabled(false)
+    end
     bar:SetHeight(NephUI:Scale(cfg.height or 4))
     bar:SetPoint("CENTER", anchor, anchorPoint, NephUI:Scale(cfg.offsetX or 0), NephUI:Scale(cfg.offsetY or 12))
 
     local width = cfg.width or 0
     if width <= 0 then
-        width = (anchor.__cdmIconWidth or anchor:GetWidth())
-        -- Round down to handle decimal values (e.g., 100.9 -> 100) to prevent overflow
-        width = math.floor(width)
-
-        -- Apply trim - scale padding first, then subtract from pixel width
-        local pad = NephUI:Scale(cfg.autoWidthPadding or 5.8)
-        width = width - (pad * 2)
-        if width < 0 then width = 0 end
+        width = PixelSnap(anchor.__cdmIconWidth or anchor:GetWidth())
         -- Width is already in pixels, no need to scale again
     else
         width = NephUI:Scale(width)
@@ -52,7 +56,7 @@ function ResourceBars:GetSecondaryPowerBar()
     local bgColor = cfg.bgColor or { 0.15, 0.15, 0.15, 1 }
     bar.Background:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4] or 1)
 
-    -- STATUS BAR (for non-fragmented resources) - frame level 1
+    -- STATUS BAR (for non-fragmented resources) - class/custom color fill
     bar.StatusBar = CreateFrame("StatusBar", nil, bar)
     bar.StatusBar:SetAllPoints()
     -- Use GetTexture helper: if cfg.texture is set, use it; otherwise use global texture
@@ -60,13 +64,13 @@ function ResourceBars:GetSecondaryPowerBar()
     bar.StatusBar:SetStatusBarTexture(tex)
     bar.StatusBar:SetFrameLevel(bar:GetFrameLevel() + 1)
 
-    -- BORDER - frame level 2
+    -- BORDER - above ticks
     bar.Border = CreateFrame("Frame", nil, bar, "BackdropTemplate")
-    bar.Border:SetFrameLevel(bar:GetFrameLevel() + 2)
-    local borderSize = cfg.borderSize or 1
-    local borderOffset = NephUI:Scale(borderSize)
-    bar.Border:SetPoint("TOPLEFT", bar, -borderOffset, borderOffset)
-    bar.Border:SetPoint("BOTTOMRIGHT", bar, borderOffset, -borderOffset)
+    bar.Border:SetFrameLevel(bar:GetFrameLevel() + 4)
+    local borderSize = NephUI:ScaleBorder(cfg.borderSize or 1)
+    bar._scaledBorder = borderSize
+    bar.Border:SetPoint("TOPLEFT", bar, -borderSize, borderSize)
+    bar.Border:SetPoint("BOTTOMRIGHT", bar, borderSize, -borderSize)
     bar.Border:SetBackdrop({
         edgeFile = "Interface\\Buttons\\WHITE8X8",
         edgeSize = borderSize,
@@ -74,20 +78,25 @@ function ResourceBars:GetSecondaryPowerBar()
     local borderColor = cfg.borderColor or { 0, 0, 0, 1 }
     bar.Border:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1)
 
-    -- TICKS FRAME - frame level 3
+    -- TICKS FRAME - above charged overlay
     bar.TicksFrame = CreateFrame("Frame", nil, bar)
     bar.TicksFrame:SetAllPoints(bar)
     bar.TicksFrame:SetFrameLevel(bar:GetFrameLevel() + 3)
 
-    -- RUNE TIMER TEXT FRAME - frame level 3 (above border, same as ticks)
+    -- CHARGED POWER OVERLAY FRAME - sits above the status bar, below ticks/border
+    bar.ChargedFrame = CreateFrame("Frame", nil, bar)
+    bar.ChargedFrame:SetAllPoints(bar)
+    bar.ChargedFrame:SetFrameLevel(bar:GetFrameLevel() + 2)
+
+    -- RUNE TIMER TEXT FRAME - above border
     bar.RuneTimerTextFrame = CreateFrame("Frame", nil, bar)
     bar.RuneTimerTextFrame:SetAllPoints(bar)
-    bar.RuneTimerTextFrame:SetFrameLevel(bar:GetFrameLevel() + 3)
+    bar.RuneTimerTextFrame:SetFrameLevel(bar:GetFrameLevel() + 5)
 
-    -- TEXT FRAME - frame level 4 (highest)
+    -- TEXT FRAME - highest
     bar.TextFrame = CreateFrame("Frame", nil, bar)
     bar.TextFrame:SetAllPoints(bar)
-    bar.TextFrame:SetFrameLevel(bar:GetFrameLevel() + 4)
+    bar.TextFrame:SetFrameLevel(bar:GetFrameLevel() + 6)
 
     bar.TextValue = bar.TextFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     bar.TextValue:SetPoint("CENTER", bar.TextFrame, "CENTER", NephUI:Scale(cfg.textX or 0), NephUI:Scale(cfg.textY or 0))
@@ -110,10 +119,72 @@ function ResourceBars:GetSecondaryPowerBar()
     -- TICKS
     bar.ticks = {}
 
+    -- CHARGED POWER SEGMENTS
+    bar.ChargedSegments = {}
+
     bar:Hide()
 
     NephUI.secondaryPowerBar = bar
     return bar
+end
+
+function ResourceBars:UpdateChargedPowerSegments(bar, resource, max)
+    local cfg = NephUI.db.profile.secondaryPowerBar
+
+    -- Hide all overlays first
+    for _, segment in pairs(bar.ChargedSegments) do
+        segment:Hide()
+    end
+
+    -- Bail out if the bar itself is hidden or not applicable
+    if cfg.hideBarShowText or not resource or not max then
+        return
+    end
+
+    if fragmentedPowerTypes[resource] or not tickedPowerTypes[resource] then
+        return
+    end
+
+    local chargedPoints = GetChargedPowerPoints and GetChargedPowerPoints(resource)
+    if not chargedPoints or #chargedPoints == 0 then
+        return
+    end
+
+    local width = bar:GetWidth()
+    local height = bar:GetHeight()
+    if width <= 0 or height <= 0 then
+        return
+    end
+
+    -- Use display max for ticked resources (soul shards can be fractional internally)
+    local displayMax = max
+    if resource == Enum.PowerType.SoulShards then
+        displayMax = UnitPowerMax("player", resource)
+    end
+    if not displayMax or displayMax <= 0 then
+        return
+    end
+
+    local segmentWidth = width / displayMax
+    local chargedColor = cfg.chargedColor or { 0.22, 0.62, 1.0, 0.8 }
+
+    for _, index in ipairs(chargedPoints) do
+        if index >= 1 and index <= displayMax then
+            local segment = bar.ChargedSegments[index]
+            if not segment then
+                segment = bar.ChargedFrame:CreateTexture(nil, "ARTWORK")
+                bar.ChargedSegments[index] = segment
+            end
+
+            segment:ClearAllPoints()
+            segment:SetPoint("LEFT", bar, "LEFT", (index - 1) * segmentWidth, 0)
+            segment:SetSize(segmentWidth, height)
+            -- Use charged color exclusively; avoid additive blend so class/custom bar colors do not tint these overlays.
+            segment:SetColorTexture(chargedColor[1], chargedColor[2], chargedColor[3], chargedColor[4] or 0.8)
+            segment:SetBlendMode("BLEND")
+            segment:Show()
+        end
+    end
 end
 
 function ResourceBars:CreateFragmentedPowerBars(bar, resource)
@@ -150,9 +221,11 @@ function ResourceBars:UpdateFragmentedPowerDisplay(bar, resource)
 
     local barWidth = bar:GetWidth()
     local barHeight = bar:GetHeight()
-    -- Calculate fragmented bar width - use floor to ensure pixel-perfect alignment
+    -- Calculate base fragmented bar width - use floor to ensure pixel-perfect alignment
     -- This ensures each fragment is a whole pixel width, preventing sub-pixel rendering
-    local fragmentedBarWidth = math.floor(barWidth / maxPower)
+    local baseFragmentedBarWidth = math.floor(barWidth / maxPower)
+    -- Calculate the remaining width that needs to be distributed to the last rune
+    local remainingWidth = barWidth - (baseFragmentedBarWidth * maxPower)
     
     -- Hide the main status bar fill (we display bars representing one (1) unit of resource each)
     bar.StatusBar:SetAlpha(0)
@@ -233,9 +306,11 @@ function ResourceBars:UpdateFragmentedPowerDisplay(bar, resource)
             if runeFrame then
                 runeFrame:ClearAllPoints()
                 -- Calculate position using whole pixel widths for pixel-perfect alignment
-                local runeX = (pos - 1) * fragmentedBarWidth
+                local runeX = (pos - 1) * baseFragmentedBarWidth
+                -- Calculate width: last rune gets remaining width to fill the bar completely
+                local runeWidth = (pos == #displayOrder) and (baseFragmentedBarWidth + remainingWidth) or baseFragmentedBarWidth
                 -- barHeight is already in pixels (from bar:GetHeight()), no need to scale
-                runeFrame:SetSize(fragmentedBarWidth, barHeight)
+                runeFrame:SetSize(runeWidth, barHeight)
                 runeFrame:SetPoint("LEFT", bar, "LEFT", runeX, 0)
 
                 -- Update rune timer text position and font size
@@ -300,7 +375,8 @@ function ResourceBars:UpdateFragmentedPowerDisplay(bar, resource)
                 end
                 
                 -- Calculate tick position using whole pixel widths for pixel-perfect alignment
-                local tickX = i * fragmentedBarWidth
+                -- Position tick at the boundary between runes (i * baseFragmentedBarWidth)
+                local tickX = i * baseFragmentedBarWidth
                 tick:ClearAllPoints()
                 tick:SetPoint("LEFT", bar, "LEFT", tickX, 0)
                 -- Ensure tick width is at least 1 pixel to prevent disappearing
@@ -390,30 +466,51 @@ function ResourceBars:UpdateSecondaryPowerBar()
         return
     end
 
+    -- Optionally hide when the secondary resource is mana (e.g., boomkin/ele)
+    if cfg.hideWhenMana and resource == Enum.PowerType.Mana then
+        if not InCombatLockdown() then
+            bar:Hide()
+        end
+        return
+    end
+
     -- Update layout
     local anchorPoint = cfg.anchorPoint or "CENTER"
-    bar:ClearAllPoints()
-    bar:SetPoint("CENTER", anchor, anchorPoint, NephUI:Scale(cfg.offsetX or 0), NephUI:Scale(cfg.offsetY or 12))
-    bar:SetHeight(NephUI:Scale(cfg.height or 4))
+    local desiredHeight = NephUI:Scale(cfg.height or 4)
+    local desiredX = NephUI:Scale(cfg.offsetX or 0)
+    local desiredY = NephUI:Scale(cfg.offsetY or 12)
 
     local width = cfg.width or 0
     if width <= 0 then
-        width = anchor.__cdmIconWidth
+        width = PixelSnap(
+            anchor.__cdmIconWidth
             or (NephUI.powerBar and NephUI.powerBar:IsShown() and NephUI.powerBar:GetWidth())
             or anchor:GetWidth()
-        -- Round down to handle decimal values (e.g., 100.9 -> 100) to prevent overflow
-        width = math.floor(width)
-
-        -- Apply trim - scale padding first, then subtract from pixel width
-        local pad = NephUI:Scale(cfg.autoWidthPadding or 5.8)
-        width = width - (pad * 2)
-        if width < 0 then width = 0 end
+        )
         -- Width is already in pixels, no need to scale again
     else
         width = NephUI:Scale(width)
     end
 
-    bar:SetWidth(width)
+    -- Only reposition / resize when something actually changed to avoid texture flicker
+    if bar._lastAnchor ~= anchor or bar._lastAnchorPoint ~= anchorPoint or bar._lastOffsetX ~= desiredX or bar._lastOffsetY ~= desiredY then
+        bar:ClearAllPoints()
+        bar:SetPoint("CENTER", anchor, anchorPoint, desiredX, desiredY)
+        bar._lastAnchor = anchor
+        bar._lastAnchorPoint = anchorPoint
+        bar._lastOffsetX = desiredX
+        bar._lastOffsetY = desiredY
+    end
+
+    if bar._lastHeight ~= desiredHeight then
+        bar:SetHeight(desiredHeight)
+        bar._lastHeight = desiredHeight
+    end
+
+    if bar._lastWidth ~= width then
+        bar:SetWidth(width)
+        bar._lastWidth = width
+    end
 
     -- Update background color
     local bgColor = cfg.bgColor or { 0.15, 0.15, 0.15, 1 }
@@ -423,24 +520,28 @@ function ResourceBars:UpdateSecondaryPowerBar()
 
     -- Update texture (use per-bar texture if set, otherwise use global)
     local tex = NephUI:GetTexture(cfg.texture)
-    bar.StatusBar:SetStatusBarTexture(tex)
+    if bar._lastTexture ~= tex then
+        bar.StatusBar:SetStatusBarTexture(tex)
+        bar._lastTexture = tex
+    end
 
     -- Update border size and color
     local borderSize = cfg.borderSize or 1
     if bar.Border then
-        local borderOffset = NephUI:Scale(borderSize)
+        local scaledBorder = NephUI:ScaleBorder(borderSize)
+        bar._scaledBorder = scaledBorder
         bar.Border:ClearAllPoints()
-        bar.Border:SetPoint("TOPLEFT", bar, -borderOffset, borderOffset)
-        bar.Border:SetPoint("BOTTOMRIGHT", bar, borderOffset, -borderOffset)
+        bar.Border:SetPoint("TOPLEFT", bar, -scaledBorder, scaledBorder)
+        bar.Border:SetPoint("BOTTOMRIGHT", bar, scaledBorder, -scaledBorder)
         bar.Border:SetBackdrop({
             edgeFile = "Interface\\Buttons\\WHITE8X8",
-            edgeSize = borderSize,
+            edgeSize = scaledBorder,
         })
         -- Update border color
         local borderColor = cfg.borderColor or { 0, 0, 0, 1 }
         bar.Border:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1)
         -- Show/hide border based on size
-        if borderSize > 0 then
+        if scaledBorder > 0 then
             bar.Border:Show()
         else
             bar.Border:Hide()
@@ -448,7 +549,7 @@ function ResourceBars:UpdateSecondaryPowerBar()
     end
 
     -- Get resource values
-    local max, current, displayValue, valueType = GetSecondaryResourceValue(resource)
+    local max, current, displayValue, valueType = GetSecondaryResourceValue(resource, cfg)
     if not max then
         bar:Hide()
         return
@@ -462,7 +563,8 @@ function ResourceBars:UpdateSecondaryPowerBar()
         bar.StatusBar:SetMinMaxValues(0, max)
         bar.StatusBar:SetValue(current)
 
-        if cfg.useClassColor then
+        local powerTypeColors = NephUI.db.profile.powerTypeColors
+        if powerTypeColors.useClassColor then
             -- Class color
             local _, class = UnitClass("player")
             local classColor = RAID_CLASS_COLORS[class]
@@ -472,16 +574,10 @@ function ResourceBars:UpdateSecondaryPowerBar()
                 local color = GetResourceColor(resource)
                 bar.StatusBar:SetStatusBarColor(color.r, color.g, color.b)
             end
-        elseif cfg.color then
-            -- Custom color
-            local r, g, b, a = cfg.color[1], cfg.color[2], cfg.color[3], cfg.color[4] or 1
-            if r and g and b and type(r) == "number" and type(g) == "number" and type(b) == "number" then
-                bar.StatusBar:SetStatusBarColor(r, g, b, a or 1)
-            else
-                -- Fallback to default resource color if custom color is invalid
-                local color = GetResourceColor(resource)
-                bar.StatusBar:SetStatusBarColor(color.r, color.g, color.b)
-            end
+        elseif powerTypeColors.colors[resource] then
+            -- Power type specific color
+            local color = powerTypeColors.colors[resource]
+            bar.StatusBar:SetStatusBarColor(color[1], color[2], color[3], color[4] or 1)
         else
             -- Default resource color
             local color = GetResourceColor(resource)
@@ -496,7 +592,8 @@ function ResourceBars:UpdateSecondaryPowerBar()
         bar.StatusBar:SetValue(current)
 
         -- Set bar color
-        if cfg.useClassColor then
+        local powerTypeColors = NephUI.db.profile.powerTypeColors
+        if powerTypeColors.useClassColor then
             -- Class color
             local _, class = UnitClass("player")
             local classColor = RAID_CLASS_COLORS[class]
@@ -506,24 +603,23 @@ function ResourceBars:UpdateSecondaryPowerBar()
                 local color = GetResourceColor(resource)
                 bar.StatusBar:SetStatusBarColor(color.r, color.g, color.b)
             end
-        elseif cfg.color then
-            -- Custom color
-            local r, g, b, a = cfg.color[1], cfg.color[2], cfg.color[3], cfg.color[4] or 1
-            if r and g and b and type(r) == "number" and type(g) == "number" and type(b) == "number" then
-                bar.StatusBar:SetStatusBarColor(r, g, b, a or 1)
-            else
-                -- Fallback to default resource color if custom color is invalid
-                local color = GetResourceColor(resource)
-                bar.StatusBar:SetStatusBarColor(color.r, color.g, color.b)
-            end
+        elseif powerTypeColors.colors[resource] then
+            -- Power type specific color
+            local color = powerTypeColors.colors[resource]
+            bar.StatusBar:SetStatusBarColor(color[1], color[2], color[3], color[4] or 1)
         else
             -- Default resource color
             local color = GetResourceColor(resource)
             bar.StatusBar:SetStatusBarColor(color.r, color.g, color.b)
         end
 
-        -- Update text (safe: uses only displayValue)
-        bar.TextValue:SetText(tostring(displayValue or 0))
+        if valueType == "percent" then
+            bar.TextValue:SetFormattedText("%.0f%%", displayValue or 0)
+        elseif valueType == "decimal" then
+            bar.TextValue:SetFormattedText("%.1f", displayValue or 0)
+        else
+            bar.TextValue:SetText(tostring(displayValue or 0))
+        end
         
         -- Hide fragmented bars
         for _, fragmentBar in ipairs(bar.FragmentedPowerBars) do
@@ -580,7 +676,7 @@ function ResourceBars:UpdateSecondaryPowerBar()
             bar.Background:Show()
         end
         -- Show border if size > 0
-        if bar.Border and (cfg.borderSize or 1) > 0 then
+        if bar.Border and (bar._scaledBorder or NephUI:ScaleBorder(cfg.borderSize or 1)) > 0 then
             bar.Border:Show()
         end
         -- Update ticks if this is a ticked power type and not fragmented
@@ -589,12 +685,18 @@ function ResourceBars:UpdateSecondaryPowerBar()
         end
     end
 
+    -- Update charged power overlays (e.g., Charged Combo Points)
+    self:UpdateChargedPowerSegments(bar, resource, max)
+
     -- Handle fake decimal
     if bar.SoulShardDecimal then
         local _, class = UnitClass("player")
         local spec = GetSpecialization()
 
-        if resource == Enum.PowerType.SoulShards
+        -- When showing decimal shards directly, hide the extra dot overlay
+        if valueType == "decimal" then
+            bar.SoulShardDecimal:Hide()
+        elseif resource == Enum.PowerType.SoulShards
             and class == "WARLOCK"
             and spec == 3
         then
@@ -615,4 +717,5 @@ NephUI.UpdateSecondaryPowerBar = function(self) return ResourceBars:UpdateSecond
 NephUI.UpdateSecondaryPowerBarTicks = function(self, bar, resource, max) return ResourceBars:UpdateSecondaryPowerBarTicks(bar, resource, max) end
 NephUI.CreateFragmentedPowerBars = function(self, bar, resource) return ResourceBars:CreateFragmentedPowerBars(bar, resource) end
 NephUI.UpdateFragmentedPowerDisplay = function(self, bar, resource) return ResourceBars:UpdateFragmentedPowerDisplay(bar, resource) end
+NephUI.UpdateChargedPowerSegments = function(self, bar, resource, max) return ResourceBars:UpdateChargedPowerSegments(bar, resource, max) end
 

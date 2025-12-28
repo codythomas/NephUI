@@ -11,7 +11,6 @@ local GetAnchorFrame = UF.GetAnchorFrame
 local MaskFrame = UF.MaskFrame
 local SafeDisableMouse = UF.SafeDisableMouse
 local MakePlayerFrameClickthrough = UF.MakePlayerFrameClickthrough
-local UnitToFrameName = UF.UnitToFrameName
 
 local function BeginRepositionGuard()
     if UF.__nephuiRepositioning then
@@ -54,6 +53,14 @@ function UF:HideDefaultUnitFrames()
     MaskFrame(FocusFrame)
     MaskFrame(TargetFrameToT)
     MaskFrame(PetFrame)
+
+    -- Hide default boss frames when custom boss frames are enabled
+    for i = 1, 8 do
+        local bossFrame = _G["Boss" .. i .. "TargetFrame"]
+        if bossFrame then
+            MaskFrame(bossFrame)
+        end
+    end
     
     if PlayerFrame and PlayerFrame.Selection then
         HideEditModeSelectionFrame(PlayerFrame.Selection)
@@ -107,6 +114,11 @@ end
 function UF:ApplyFramePosition(unitFrame, unit, DB)
     if not unitFrame or not DB or not DB.Frame then return end
 
+    -- Boss frames are positioned as a group by LayoutBossFrames, not individually
+    if unit:match("^boss%d+$") then
+        return
+    end
+
     -- Don't move frames in combat to avoid taint
     if InCombatLockdown() then
         return
@@ -123,10 +135,15 @@ function UF:ApplyFramePosition(unitFrame, unit, DB)
     
     local ecv = _G["EssentialCooldownViewer"]
     if DB.Frame.AnchorToCooldown and ecv and anchor == ecv then
-        local gapY = offsetY or -20
+        -- Anchor unit frames to the top of the viewer so added rows grow downward
+        local gapX = offsetX or 0
+        local gapY = offsetY
+        if gapY == nil then
+            gapY = -20
+        end
         
         if unit == "player" then
-            unitFrame:SetPoint("RIGHT", ecv, "LEFT", -20 + (offsetX or 0), gapY)
+            unitFrame:SetPoint("TOPRIGHT", ecv, "TOPLEFT", -20 + gapX, gapY)
             
             if unitFrame.editModeAnchor and not unitFrame.editModeAnchor.isMoving then
                 unitFrame.editModeAnchor:ClearAllPoints()
@@ -134,7 +151,7 @@ function UF:ApplyFramePosition(unitFrame, unit, DB)
             end
             return
         elseif unit == "target" then
-            unitFrame:SetPoint("LEFT", ecv, "RIGHT", 20 + (offsetX or 0), gapY)
+            unitFrame:SetPoint("TOPLEFT", ecv, "TOPRIGHT", 20 + gapX, gapY)
             
             if unitFrame.editModeAnchor and not unitFrame.editModeAnchor.isMoving then
                 unitFrame.editModeAnchor:ClearAllPoints()
@@ -296,7 +313,7 @@ function UF:HookAnchorFrames()
                 break
             end
 
-            for unit in pairs(UnitToFrameName) do
+            for unit in pairs(UF.UnitToFrameName) do
                 local dbUnit = unit
                 if unit:match("^boss(%d+)$") then dbUnit = "boss" end
                 

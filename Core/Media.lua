@@ -228,6 +228,11 @@ function NephUI:ApplyGlobalFont()
             local hasCooldownRef = iconFrame.cooldown == cooldownFrame
             
             if hasIcon or hasCooldownRef then
+                -- NephUI CustomIcons: per-icon cooldown text settings
+                if iconFrame._iconKey then
+                    return "customIcon:" .. tostring(iconFrame._iconKey)
+                end
+
                 local viewerFrame = iconFrame:GetParent()
                 if viewerFrame then
                     local viewerName = viewerFrame:GetName()
@@ -331,6 +336,28 @@ function NephUI:ApplyGlobalFont()
             local textColor = {1, 1, 1, 1}
             local shadowOffsetX = 1
             local shadowOffsetY = -1
+
+            if source and type(source) == "string" then
+                local iconKey = source:match("^customIcon:(.+)$")
+                if iconKey then
+                    -- Use per-icon settings where available; fallback to global viewer general settings.
+                    local iconData
+                    if self.db and self.db.profile and self.db.profile.dynamicIcons and self.db.profile.dynamicIcons.iconData then
+                        iconData = self.db.profile.dynamicIcons.iconData[iconKey]
+                    end
+
+                    local cds = iconData and iconData.settings and iconData.settings.cooldownSettings
+                    fontSize = (cds and cds.size) or 12
+                    textColor = (cds and cds.color) or { 1, 1, 1, 1 }
+
+                    if self.db and self.db.profile and self.db.profile.viewers and self.db.profile.viewers.general then
+                        shadowOffsetX = self.db.profile.viewers.general.cooldownShadowOffsetX or shadowOffsetX
+                        shadowOffsetY = self.db.profile.viewers.general.cooldownShadowOffsetY or shadowOffsetY
+                    end
+
+                    return fontSize, textColor, shadowOffsetX, shadowOffsetY
+                end
+            end
             
             if source == "targetAuras" then
                 -- Get from target auras settings

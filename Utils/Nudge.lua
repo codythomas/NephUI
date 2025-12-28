@@ -1,10 +1,45 @@
 local ADDON_NAME, ns = ...
 local NephUI = ns.Addon
 local LibEditModeOverride = LibStub("LibEditModeOverride-1.0", true)
+local strtrim = strtrim
+
+-- Advanced positioning state (copied from EditModeMore style)
+local advanced = {
+    point = "CENTER",
+    attachPoint = "CENTER",
+    attachFrame = UIParent,
+    xOffset = 0,
+    yOffset = 0,
+    scale = 1, -- size of 1 px in UI units
+}
+
+local advancedUI = {}
+local NudgeFrame
+
+local function toActualPixel(value)
+    return math.floor(value / advanced.scale + 0.5)
+end
+
+local function toRoundedNumber(text)
+    local num = tonumber(text)
+    if num == nil then
+        return nil
+    else
+        return math.floor(num + 0.5)
+    end
+end
+
+local function updateScale()
+    local _, height = GetPhysicalScreenSize()
+    local uiScale = UIParent:GetScale()
+
+    advanced.scale = 768 / uiScale / height -- size of 1 px
+end
 
 -- Store the currently selected frame
 local currentSelectedFrame = nil
 local currentSelectedFrameName = nil
+local lastUpdatedFrame = nil -- Track when we last updated the advanced UI
 
 -- Click detector frame (like EditModeTweaks)
 local clickDetector = CreateFrame("Frame")
@@ -91,6 +126,7 @@ local function ScanForSelectedFrame()
     local frame = EnumerateFrames()
     
     while frame do
+        ---@diagnostic disable-next-line: undefined-field
         if frame.isSelected == true then
             -- Found a selected frame, walk up to find the system frame
             selectedFrame = FindSystemFrame(frame)
@@ -120,27 +156,21 @@ local function EnableClickDetection()
         local nudgeFrame = _G[ADDON_NAME .. "NudgeFrame"] or NephUI.nudgeFrame
         
         if editModeSelected then
-            -- Only update if the selection changed
+            -- Only update when selection changes
             if currentSelectedFrame ~= editModeSelected then
                 currentSelectedFrame = editModeSelected
                 currentSelectedFrameName = editModeSelected:GetName() or "Anonymous Frame"
-                -- Update nudge frame display
                 if nudgeFrame then
-                    nudgeFrame:UpdatePosition()
-                    nudgeFrame:UpdateInfo()
-                    nudgeFrame:Show()
+                    nudgeFrame:UpdateVisibility()
                 end
-            elseif nudgeFrame then
-                -- Selection hasn't changed, but update position in case frame moved
-                nudgeFrame:UpdatePosition()
             end
         else
-            -- No Edit Mode selection - clear it and hide nudge frame
+            -- No Edit Mode selection - clear it and refresh the embedded panel
             if currentSelectedFrame then
                 currentSelectedFrame = nil
                 currentSelectedFrameName = nil
                 if nudgeFrame then
-                    nudgeFrame:Hide()
+                    nudgeFrame:UpdateVisibility()
                 end
             end
             
@@ -154,9 +184,7 @@ local function EnableClickDetection()
                         SelectFrame(frame)
                         -- Update nudge frame display
                         if nudgeFrame then
-                            nudgeFrame:UpdatePosition()
-                            nudgeFrame:UpdateInfo()
-                            nudgeFrame:Show()
+                            nudgeFrame:UpdateVisibility()
                         end
                     end
                 end
@@ -202,146 +230,476 @@ local function GetFrameDisplayName(frame, frameName)
     end
 end
 
-local NudgeFrame = CreateFrame("Frame", ADDON_NAME .. "NudgeFrame", UIParent, "BackdropTemplate")
+-- Helpers for EditModeMore style UI
+local function setupLabel(label)
+    label:SetJustifyH("LEFT")
+    label:SetJustifyV("MIDDLE")
+end
+
+local function setupEditBox(editBox)
+    editBox:SetAutoFocus(false)
+    editBox:EnableKeyboard(true)
+    editBox:SetPropagateKeyboardInput(false)
+
+    editBox:SetScript("OnEditFocusGained", function(self)
+        advanced.oldText = self:GetText()
+    end)
+    editBox:HookScript("OnEscapePressed", function(self)
+        self:SetText(advanced.oldText)
+        self:ClearFocus()
+    end)
+end
+
+local function setupPointDropdown(dropdown)
+    local function isSelected(index)
+        if advanced.point == "CENTER" then
+            return index == 0
+        elseif advanced.point == "TOP" then
+            return index == 1
+        elseif advanced.point == "BOTTOM" then
+            return index == 2
+        elseif advanced.point == "LEFT" then
+            return index == 3
+        elseif advanced.point == "RIGHT" then
+            return index == 4
+        elseif advanced.point == "TOPLEFT" then
+            return index == 5
+        elseif advanced.point == "TOPRIGHT" then
+            return index == 6
+        elseif advanced.point == "BOTTOMLEFT" then
+            return index == 7
+        elseif advanced.point == "BOTTOMRIGHT" then
+            return index == 8
+        end
+    end
+
+    local function SetSelected(index)
+        if index == 0 then
+            advanced.point = "CENTER"
+        elseif index == 1 then
+            advanced.point = "TOP"
+        elseif index == 2 then
+            advanced.point = "BOTTOM"
+        elseif index == 3 then
+            advanced.point = "LEFT"
+        elseif index == 4 then
+            advanced.point = "RIGHT"
+        elseif index == 5 then
+            advanced.point = "TOPLEFT"
+        elseif index == 6 then
+            advanced.point = "TOPRIGHT"
+        elseif index == 7 then
+            advanced.point = "BOTTOMLEFT"
+        elseif index == 8 then
+            advanced.point = "BOTTOMRIGHT"
+        end
+
+        NephUI:ApplyAdvancedNudgeSettings()
+    end
+
+    dropdown:SetupMenu(function(_, rootDescription)
+        rootDescription:CreateRadio("CENTER", isSelected, SetSelected, 0);
+        rootDescription:CreateRadio("TOP", isSelected, SetSelected, 1);
+        rootDescription:CreateRadio("BOTTOM", isSelected, SetSelected, 2);
+        rootDescription:CreateRadio("LEFT", isSelected, SetSelected, 3);
+        rootDescription:CreateRadio("RIGHT", isSelected, SetSelected, 4);
+        rootDescription:CreateRadio("TOPLEFT", isSelected, SetSelected, 5);
+        rootDescription:CreateRadio("TOPRIGHT", isSelected, SetSelected, 6);
+        rootDescription:CreateRadio("BOTTOMLEFT", isSelected, SetSelected, 7);
+        rootDescription:CreateRadio("BOTTOMRIGHT", isSelected, SetSelected, 8);
+    end)
+end
+
+local function setupRelativePointDropdown(dropdown)
+    local function isSelected(index)
+        if advanced.attachPoint == "CENTER" then
+            return index == 0
+        elseif advanced.attachPoint == "TOP" then
+            return index == 1
+        elseif advanced.attachPoint == "BOTTOM" then
+            return index == 2
+        elseif advanced.attachPoint == "LEFT" then
+            return index == 3
+        elseif advanced.attachPoint == "RIGHT" then
+            return index == 4
+        elseif advanced.attachPoint == "TOPLEFT" then
+            return index == 5
+        elseif advanced.attachPoint == "TOPRIGHT" then
+            return index == 6
+        elseif advanced.attachPoint == "BOTTOMLEFT" then
+            return index == 7
+        elseif advanced.attachPoint == "BOTTOMRIGHT" then
+            return index == 8
+        end
+    end
+
+    local function SetSelected(index)
+        if index == 0 then
+            advanced.attachPoint = "CENTER"
+        elseif index == 1 then
+            advanced.attachPoint = "TOP"
+        elseif index == 2 then
+            advanced.attachPoint = "BOTTOM"
+        elseif index == 3 then
+            advanced.attachPoint = "LEFT"
+        elseif index == 4 then
+            advanced.attachPoint = "RIGHT"
+        elseif index == 5 then
+            advanced.attachPoint = "TOPLEFT"
+        elseif index == 6 then
+            advanced.attachPoint = "TOPRIGHT"
+        elseif index == 7 then
+            advanced.attachPoint = "BOTTOMLEFT"
+        elseif index == 8 then
+            advanced.attachPoint = "BOTTOMRIGHT"
+        end
+
+        NephUI:ApplyAdvancedNudgeSettings()
+    end
+
+    dropdown:SetupMenu(function(_, rootDescription)
+        rootDescription:CreateRadio("CENTER", isSelected, SetSelected, 0);
+        rootDescription:CreateRadio("TOP", isSelected, SetSelected, 1);
+        rootDescription:CreateRadio("BOTTOM", isSelected, SetSelected, 2);
+        rootDescription:CreateRadio("LEFT", isSelected, SetSelected, 3);
+        rootDescription:CreateRadio("RIGHT", isSelected, SetSelected, 4);
+        rootDescription:CreateRadio("TOPLEFT", isSelected, SetSelected, 5);
+        rootDescription:CreateRadio("TOPRIGHT", isSelected, SetSelected, 6);
+        rootDescription:CreateRadio("BOTTOMLEFT", isSelected, SetSelected, 7);
+        rootDescription:CreateRadio("BOTTOMRIGHT", isSelected, SetSelected, 8);
+    end)
+end
+
+local function setAdvancedEnabled(enabled)
+    if not advancedUI then return end
+    local method = enabled and "Enable" or "Disable"
+    if advancedUI.pointDropdown then advancedUI.pointDropdown[method](advancedUI.pointDropdown) end
+    if advancedUI.attachFrameEditBox then advancedUI.attachFrameEditBox[method](advancedUI.attachFrameEditBox) end
+    if advancedUI.attachPointDropdown then advancedUI.attachPointDropdown[method](advancedUI.attachPointDropdown) end
+    if advancedUI.frameNameEditBox then advancedUI.frameNameEditBox[method](advancedUI.frameNameEditBox) end
+end
+
+local function resolveFrame(frameOrName)
+    if type(frameOrName) == "string" then
+        return _G[frameOrName]
+    end
+    return frameOrName
+end
+
+function NephUI:ApplyAdvancedNudgeSettings()
+    local selectedFrame = currentSelectedFrame
+    if not selectedFrame or not selectedFrame.systemInfo then return end
+
+    -- Bail out early if frame cannot be moved (matches EditModeMore behavior)
+    if selectedFrame.CanBeMoved and not selectedFrame:CanBeMoved() then
+        return
+    end
+
+    -- Managed frames must be broken out before we can change anchors
+    if selectedFrame.isManagedFrame and selectedFrame:IsInDefaultPosition() then
+        if selectedFrame.BreakFromFrameManager then
+            selectedFrame:BreakFromFrameManager()
+        end
+    end
+
+    -- Clear any snapping/drag state so the new anchor sticks immediately
+    if selectedFrame.ClearFrameSnap then
+        selectedFrame:ClearFrameSnap()
+    end
+    if selectedFrame.StopMovingOrSizing then
+        selectedFrame:StopMovingOrSizing()
+    end
+
+    -- ensure frame reference is valid
+    local attachFrameObj = resolveFrame(advanced.attachFrame) or UIParent
+    advanced.attachFrame = attachFrameObj
+
+    local anchor = selectedFrame.systemInfo.anchorInfo or {}
+    anchor.point = advanced.point
+    anchor.relativePoint = advanced.attachPoint
+    anchor.relativeTo = attachFrameObj:GetName() or attachFrameObj
+    anchor.offsetX = advanced.xOffset
+    anchor.offsetY = advanced.yOffset
+    selectedFrame.systemInfo.anchorInfo = anchor
+
+    selectedFrame.hasActiveChanges = true
+    if EditModeManagerFrame and EditModeManagerFrame.SetHasActiveChanges then
+        EditModeManagerFrame:SetHasActiveChanges(true)
+    end
+
+    selectedFrame:ClearAllPoints()
+    selectedFrame:SetPoint(advanced.point, attachFrameObj, advanced.attachPoint, advanced.xOffset, advanced.yOffset)
+
+    if selectedFrame.OnSystemPositionChange then
+        selectedFrame:OnSystemPositionChange()
+    elseif EditModeManagerFrame and EditModeManagerFrame.OnSystemPositionChange then
+        EditModeManagerFrame:OnSystemPositionChange(selectedFrame)
+    end
+
+    if self.nudgeFrame and self.nudgeFrame:IsShown() then
+        self.nudgeFrame:UpdateInfo()
+        self.nudgeFrame:UpdatePosition()
+    end
+end
+
+local function updateAdvancedFromSelection()
+    if not advancedUI or not advancedUI.pointDropdown then return end
+    local selectedFrame = currentSelectedFrame
+    if not selectedFrame then
+        setAdvancedEnabled(false)
+        if advancedUI.frameNameEditBox then advancedUI.frameNameEditBox:SetText("") end
+        if advancedUI.attachFrameEditBox then advancedUI.attachFrameEditBox:SetText("") end
+        if advancedUI.pointDropdown then advancedUI.pointDropdown:GenerateMenu() end
+        if advancedUI.attachPointDropdown then advancedUI.attachPointDropdown:GenerateMenu() end
+        return
+    end
+
+    setAdvancedEnabled(true)
+    updateScale()
+
+    local anchor = selectedFrame.systemInfo and selectedFrame.systemInfo.anchorInfo or {}
+    local point, relativeTo, relativePoint, xOfs, yOfs = selectedFrame:GetPoint(1)
+
+    advanced.point = anchor.point or point or "CENTER"
+    advanced.attachPoint = anchor.relativePoint or relativePoint or advanced.point
+    advanced.attachFrame = resolveFrame(anchor.relativeTo or relativeTo or UIParent) or UIParent
+    advanced.xOffset = anchor.offsetX or xOfs or 0
+    advanced.yOffset = anchor.offsetY or yOfs or 0
+
+    advancedUI.pointDropdown:GenerateMenu()
+    advancedUI.attachPointDropdown:GenerateMenu()
+    advancedUI.attachFrameEditBox:SetText(advanced.attachFrame:GetName() or "UIParent")
+    advancedUI.frameNameEditBox:SetText(selectedFrame:GetName() or "Frame")
+end
+
+local function createAdvancedControls(parent)
+    local frame = CreateFrame("Frame", nil, parent)
+    frame:SetPoint("TOPLEFT", parent, "TOPLEFT", 10, -168)
+    frame:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -10, -168)
+    frame:SetHeight(110)
+
+    -- point
+    local pointContainer = CreateFrame("Frame", nil, frame)
+    pointContainer:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+    pointContainer:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+    pointContainer:SetHeight(26)
+
+    local pointLabel = pointContainer:CreateFontString(nil, "ARTWORK", "GameFontHighlightMedium")
+    setupLabel(pointLabel)
+    pointLabel:SetText("Self Point")
+    pointLabel:SetPoint("TOPLEFT", pointContainer, "TOPLEFT", 0, 0)
+    pointLabel:SetSize(90, 24)
+
+    local pointDropdown = CreateFrame("DropdownButton", nil, pointContainer, "WowStyle1DropdownTemplate")
+    setupPointDropdown(pointDropdown)
+    pointDropdown:SetPoint("LEFT", pointLabel, "RIGHT", 4, 0)
+    pointDropdown:SetSize(210, 22)
+
+    -- attach frame
+    local attachFrameContainer = CreateFrame("Frame", nil, frame)
+    attachFrameContainer:SetPoint("TOPLEFT", pointContainer, "BOTTOMLEFT", 0, -6)
+    attachFrameContainer:SetPoint("TOPRIGHT", pointContainer, "BOTTOMRIGHT", 0, -6)
+    attachFrameContainer:SetHeight(26)
+
+    local attachFrameLabel = attachFrameContainer:CreateFontString(nil, "ARTWORK", "GameFontHighlightMedium")
+    setupLabel(attachFrameLabel)
+    attachFrameLabel:SetText("Anchor to")
+    attachFrameLabel:SetPoint("TOPLEFT", attachFrameContainer, "TOPLEFT", 0, 0)
+    attachFrameLabel:SetSize(90, 24)
+
+    local attachFrameEditBox = CreateFrame("EditBox", nil, attachFrameContainer, "InputBoxTemplate")
+    setupEditBox(attachFrameEditBox)
+    attachFrameEditBox:SetPoint("LEFT", attachFrameLabel, "RIGHT", 6, 0)
+    attachFrameEditBox:SetSize(210, 22)
+    attachFrameEditBox:SetScript("OnEnterPressed", function(self)
+        local frameName = strtrim(self:GetText() or "")
+        local target = frameName == "UIParent" and UIParent or _G[frameName]
+
+        -- Accept any real frame (C_Widget.IsFrameWidget when available)
+        local isFrame = target ~= nil
+            and type(target) == "table"
+            and ((C_Widget and C_Widget.IsFrameWidget and C_Widget.IsFrameWidget(target)) or target.GetObjectType)
+
+        if isFrame then
+            advanced.attachFrame = target
+            NephUI:ApplyAdvancedNudgeSettings()
+        else
+            self:SetText(advanced.oldText)
+        end
+
+        self:ClearFocus()
+    end)
+
+    -- attach point
+    local attachPointContainer = CreateFrame("Frame", nil, frame)
+    attachPointContainer:SetPoint("TOPLEFT", attachFrameContainer, "BOTTOMLEFT", 0, -6)
+    attachPointContainer:SetPoint("TOPRIGHT", attachFrameContainer, "BOTTOMRIGHT", 0, -6)
+    attachPointContainer:SetHeight(26)
+
+    local attachPointLabel = attachPointContainer:CreateFontString(nil, "ARTWORK", "GameFontHighlightMedium")
+    setupLabel(attachPointLabel)
+    attachPointLabel:SetText("Anchor Point")
+    attachPointLabel:SetPoint("TOPLEFT", attachPointContainer, "TOPLEFT", 0, 0)
+    attachPointLabel:SetSize(90, 24)
+
+    local attachPointDropdown = CreateFrame("DropdownButton", nil, attachPointContainer, "WowStyle1DropdownTemplate")
+    setupRelativePointDropdown(attachPointDropdown)
+    attachPointDropdown:SetPoint("LEFT", attachPointLabel, "RIGHT", 4, 0)
+    attachPointDropdown:SetSize(210, 22)
+
+    -- frame name copy
+    local frameNameContainer = CreateFrame("Frame", nil, frame)
+    frameNameContainer:SetPoint("TOPLEFT", attachPointContainer, "BOTTOMLEFT", 0, -6)
+    frameNameContainer:SetPoint("TOPRIGHT", attachPointContainer, "BOTTOMRIGHT", 0, -6)
+    frameNameContainer:SetHeight(26)
+
+    local frameNameLabel = frameNameContainer:CreateFontString(nil, "ARTWORK", "GameFontHighlightMedium")
+    setupLabel(frameNameLabel)
+    frameNameLabel:SetText("Frame Name")
+    frameNameLabel:SetPoint("TOPLEFT", frameNameContainer, "TOPLEFT", 0, 0)
+    frameNameLabel:SetSize(90, 24)
+
+    local frameNameEditBox = CreateFrame("EditBox", nil, frameNameContainer, "InputBoxTemplate")
+    setupEditBox(frameNameEditBox)
+    frameNameEditBox:SetPoint("LEFT", frameNameLabel, "RIGHT", 6, 0)
+    frameNameEditBox:SetSize(210, 22)
+    frameNameEditBox:SetScript("OnEnterPressed", function(self)
+        self:SetText(advanced.oldText)
+        self:ClearFocus()
+    end)
+
+    advancedUI.pointDropdown = pointDropdown
+    advancedUI.attachFrameEditBox = attachFrameEditBox
+    advancedUI.attachPointDropdown = attachPointDropdown
+    advancedUI.frameNameEditBox = frameNameEditBox
+
+    setAdvancedEnabled(false)
+end
+
+local function UpdateSettingsDialogLayout()
+    if not NudgeFrame or not EditModeSystemSettingsDialog then return end
+
+    NudgeFrame:SetParent(EditModeSystemSettingsDialog)
+    NudgeFrame:SetFrameStrata(EditModeSystemSettingsDialog:GetFrameStrata())
+    NudgeFrame:SetFrameLevel(EditModeSystemSettingsDialog:GetFrameLevel())
+
+    NudgeFrame:ClearAllPoints()
+    local anchor = EditModeSystemSettingsDialog.Buttons or EditModeSystemSettingsDialog
+    NudgeFrame:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
+    NudgeFrame:SetPoint("TOPRIGHT", anchor, "BOTTOMRIGHT", 0, -2)
+
+    if EditModeSystemSettingsDialog:GetTop() and NudgeFrame:GetBottom() then
+        EditModeSystemSettingsDialog:SetHeight(EditModeSystemSettingsDialog:GetTop() - NudgeFrame:GetBottom() + 20)
+    end
+end
+
+local function HookSettingsDialog()
+    if not EditModeSystemSettingsDialog or (NudgeFrame and NudgeFrame._settingsHooked) then
+        return
+    end
+
+    NudgeFrame._settingsHooked = true
+
+    EditModeSystemSettingsDialog:HookScript("OnShow", function()
+        UpdateSettingsDialogLayout()
+        NudgeFrame:UpdateVisibility()
+    end)
+
+    EditModeSystemSettingsDialog:HookScript("OnHide", function()
+        NudgeFrame:Hide()
+    end)
+
+    hooksecurefunc(EditModeSystemSettingsDialog, "UpdateDialog", function()
+        UpdateSettingsDialogLayout()
+        NudgeFrame:UpdateVisibility()
+    end)
+end
+
+local nudgeParent = EditModeSystemSettingsDialog or UIParent
+NudgeFrame = CreateFrame("Frame", ADDON_NAME .. "NudgeFrame", nudgeParent, "BackdropTemplate")
 NephUI.nudgeFrame = NudgeFrame
 
-NudgeFrame:SetSize(200, 200)
+-- Slightly roomier footprint for clarity
+NudgeFrame:SetHeight(300)
 NudgeFrame:SetFrameStrata("DIALOG")
-NudgeFrame:SetClampedToScreen(true)
 NudgeFrame:EnableMouse(true)
-NudgeFrame:SetMovable(false)
 NudgeFrame:Hide()
 
-NudgeFrame:SetBackdrop({
-    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-    tile = true,
-    tileSize = 32,
-    edgeSize = 32,
-    insets = { left = 8, right = 8, top = 8, bottom = 8 }
-})
-
 function NudgeFrame:UpdatePosition()
-    local selectedFrame = GetSelectedEditModeFrame()
-    if selectedFrame then
+    if EditModeSystemSettingsDialog then
+        UpdateSettingsDialogLayout()
+    else
         self:ClearAllPoints()
-        
-        -- Get screen dimensions
-        local screenWidth = UIParent:GetWidth()
-        local screenHeight = UIParent:GetHeight()
-        
-        -- Get frame position on screen (these can be nil if frame isn't shown)
-        local frameLeft = selectedFrame:GetLeft()
-        local frameRight = selectedFrame:GetRight()
-        local frameTop = selectedFrame:GetTop()
-        local frameBottom = selectedFrame:GetBottom()
-        
-        -- Default positioning (below frame, left-aligned)
-        local attachPoint = "TOPLEFT"
-        local relativePoint = "BOTTOMLEFT"
-        local xOffset = 0
-        local yOffset = -10
-        
-        -- Only calculate if we have valid frame positions
-        if frameLeft and frameRight and frameTop and frameBottom then
-            -- Calculate distances to edges
-            local distToLeft = frameLeft
-            local distToRight = screenWidth - frameRight
-            local distToTop = screenHeight - frameTop
-            local distToBottom = frameBottom
-            
-            -- Threshold for "near edge" (in pixels) - nudge frame is ~200px wide, 200px tall
-            local edgeThreshold = 220
-            
-            -- Determine vertical positioning first
-            local nearBottom = distToBottom < edgeThreshold
-            local nearTop = distToTop < edgeThreshold
-            
-            -- Determine horizontal positioning
-            local nearLeft = distToLeft < edgeThreshold
-            local nearRight = distToRight < edgeThreshold
-            
-            -- Handle corners first (most restrictive)
-            if nearBottom and nearLeft then
-                -- Bottom-left corner: attach above and to the right
-                attachPoint = "BOTTOMLEFT"
-                relativePoint = "TOPLEFT"
-                xOffset = 10
-                yOffset = 10
-            elseif nearBottom and nearRight then
-                -- Bottom-right corner: attach above and to the left
-                attachPoint = "BOTTOMRIGHT"
-                relativePoint = "TOPRIGHT"
-                xOffset = -10
-                yOffset = 10
-            elseif nearTop and nearLeft then
-                -- Top-left corner: attach below and to the right
-                attachPoint = "TOPLEFT"
-                relativePoint = "BOTTOMLEFT"
-                xOffset = 10
-                yOffset = -10
-            elseif nearTop and nearRight then
-                -- Top-right corner: attach below and to the left
-                attachPoint = "TOPRIGHT"
-                relativePoint = "BOTTOMRIGHT"
-                xOffset = -10
-                yOffset = -10
-            -- Handle edges
-            elseif nearBottom then
-                -- Near bottom: attach above
-                attachPoint = "BOTTOMLEFT"
-                relativePoint = "TOPLEFT"
-                xOffset = 0
-                yOffset = 10
-            elseif nearTop then
-                -- Near top: attach below
-                attachPoint = "TOPLEFT"
-                relativePoint = "BOTTOMLEFT"
-                xOffset = 0
-                yOffset = -10
-            elseif nearLeft then
-                -- Near left: attach to right side
-                attachPoint = "TOPLEFT"
-                relativePoint = "TOPRIGHT"
-                xOffset = 10
-                yOffset = 0
-            elseif nearRight then
-                -- Near right: attach to left side
-                attachPoint = "TOPRIGHT"
-                relativePoint = "TOPLEFT"
-                xOffset = -10
-                yOffset = 0
-            end
-        end
-        
-        self:SetPoint(attachPoint, selectedFrame, relativePoint, xOffset, yOffset)
-    elseif EditModeManagerFrame then
-        -- Fallback to EditModeManagerFrame if no frame selected
-        self:ClearAllPoints()
-        self:SetPoint("RIGHT", EditModeManagerFrame, "LEFT", -5, 0)
+        self:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     end
 end
 
 local title = NudgeFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-title:SetPoint("TOP", 0, -12)
+title:SetPoint("TOP", 0, -8)
 title:SetText("Nudge Frame")
 
+-- Keep an info slot for future use but hide it (frame name edit box serves as display)
 local infoText = NudgeFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-infoText:SetPoint("TOP", title, "BOTTOM", 0, -8)
-infoText:SetWidth(180)
-infoText:SetWordWrap(true)
+infoText:Hide()
 NudgeFrame.infoText = infoText
 
-local posText = NudgeFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-posText:SetPoint("TOP", infoText, "BOTTOM", 0, -8)
-posText:SetWidth(180)
-posText:SetJustifyH("CENTER")
-NudgeFrame.posText = posText
+local coordsContainer = CreateFrame("Frame", nil, NudgeFrame)
+coordsContainer:SetPoint("TOP", title, "BOTTOM", 0, -10)
+coordsContainer:SetSize(240, 28)
+NudgeFrame.coordsContainer = coordsContainer
 
-local function CreateArrowButton(parent, direction, x, yFromTop)
+local xLabel = coordsContainer:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+xLabel:SetPoint("LEFT", coordsContainer, "LEFT", 0, 0)
+xLabel:SetWidth(14)
+xLabel:SetJustifyH("LEFT")
+xLabel:SetText("X")
+
+local xEditBox = CreateFrame("EditBox", nil, coordsContainer, "InputBoxTemplate")
+setupEditBox(xEditBox)
+xEditBox:SetPoint("LEFT", xLabel, "RIGHT", 4, 0)
+xEditBox:SetSize(80, 24)
+xEditBox:SetScript("OnEnterPressed", function(self)
+    local val = toRoundedNumber(self:GetText())
+    if val == nil then
+        self:SetText(advanced.oldText or "")
+    else
+        advanced.xOffset = val
+        NephUI:ApplyAdvancedNudgeSettings()
+    end
+    self:ClearFocus()
+end)
+NudgeFrame.xEditBox = xEditBox
+
+local yLabel = coordsContainer:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+yLabel:SetPoint("LEFT", xEditBox, "RIGHT", 12, 0)
+yLabel:SetWidth(14)
+yLabel:SetJustifyH("LEFT")
+yLabel:SetText("Y")
+
+local yEditBox = CreateFrame("EditBox", nil, coordsContainer, "InputBoxTemplate")
+setupEditBox(yEditBox)
+yEditBox:SetPoint("LEFT", yLabel, "RIGHT", 4, 0)
+yEditBox:SetSize(80, 24)
+yEditBox:SetScript("OnEnterPressed", function(self)
+    local val = toRoundedNumber(self:GetText())
+    if val == nil then
+        self:SetText(advanced.oldText or "")
+    else
+        advanced.yOffset = val
+        NephUI:ApplyAdvancedNudgeSettings()
+    end
+    self:ClearFocus()
+end)
+NudgeFrame.yEditBox = yEditBox
+
+local function CreateArrowButton(parent, direction, anchorFrame, x, yOffset)
     local button = CreateFrame("Button", nil, parent)
-    button:SetSize(32, 32)
-    button:SetPoint("TOP", parent, "TOP", x, yFromTop)
+    button:SetSize(28, 28)
+    if anchorFrame then
+        button:SetPoint("TOP", anchorFrame, "BOTTOM", x, yOffset or -10)
+    else
+        button:SetPoint("TOP", parent, "TOP", x, yOffset or -10)
+    end
     
     button:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-NextPage-Up")
     button:SetPushedTexture("Interface\\Buttons\\UI-SpellbookIcon-NextPage-Down")
@@ -381,25 +739,20 @@ local function CreateArrowButton(parent, direction, x, yFromTop)
     return button
 end
 
-NudgeFrame.upButton = CreateArrowButton(NudgeFrame, "UP", 0, -70)
-NudgeFrame.downButton = CreateArrowButton(NudgeFrame, "DOWN", 0, -130)
-NudgeFrame.leftButton = CreateArrowButton(NudgeFrame, "LEFT", -25, -100)
-NudgeFrame.rightButton = CreateArrowButton(NudgeFrame, "RIGHT", 25, -100)
+-- Tighten arrow cluster spacing
+local arrowAnchor = coordsContainer
+NudgeFrame.upButton = CreateArrowButton(NudgeFrame, "UP", arrowAnchor, 0, -10)
+NudgeFrame.downButton = CreateArrowButton(NudgeFrame, "DOWN", arrowAnchor, 0, -58)
+NudgeFrame.leftButton = CreateArrowButton(NudgeFrame, "LEFT", arrowAnchor, -24, -34)
+NudgeFrame.rightButton = CreateArrowButton(NudgeFrame, "RIGHT", arrowAnchor, 24, -34)
 
-local closeButton = CreateFrame("Button", nil, NudgeFrame, "UIPanelCloseButton")
-closeButton:SetPoint("TOPRIGHT", -5, -5)
-closeButton:SetScript("OnClick", function()
-    NudgeFrame:Hide()
-end)
+-- advanced controls (EditModeMore copy)
+createAdvancedControls(NudgeFrame)
 
 function NudgeFrame:UpdateInfo()
     local selectedFrame, frameName = GetSelectedEditModeFrame()
-    
+
     if selectedFrame then
-        local displayName = GetFrameDisplayName(selectedFrame, frameName)
-        self.infoText:SetText(displayName)
-        self.infoText:SetTextColor(0, 1, 0)
-        
         -- Prefer showing Edit Mode anchorInfo offsets if available
         local xOfs, yOfs
         if selectedFrame.systemInfo and selectedFrame.systemInfo.anchorInfo then
@@ -408,42 +761,66 @@ function NudgeFrame:UpdateInfo()
             yOfs = anchor.offsetY or 0
         else
             -- Fallback to GetPoint
-            local point, relativeTo, relativePoint, x, y = selectedFrame:GetPoint(1)
+            local point, _, _, x, y = selectedFrame:GetPoint(1)
             xOfs = x or 0
             yOfs = y or 0
         end
-        
-        self.posText:SetFormattedText("Position: %.1f, %.1f", xOfs, yOfs)
-        self.posText:SetTextColor(1, 1, 1)
-        
+
+        advanced.xOffset = xOfs
+        advanced.yOffset = yOfs
+        if self.xEditBox then
+            self.xEditBox:SetText(string.format("%.1f", xOfs))
+            self.xEditBox:Enable()
+        end
+        if self.yEditBox then
+            self.yEditBox:SetText(string.format("%.1f", yOfs))
+            self.yEditBox:Enable()
+        end
+
         self.upButton:Enable()
         self.downButton:Enable()
         self.leftButton:Enable()
         self.rightButton:Enable()
+
+        -- Only update advanced UI when the selected frame changes
+        if lastUpdatedFrame ~= selectedFrame then
+            lastUpdatedFrame = selectedFrame
+            updateAdvancedFromSelection()
+        end
     else
-        self.infoText:SetText("No frame selected")
-        self.infoText:SetTextColor(0.7, 0.7, 0.7)
-        self.posText:SetText("")
-        
+        if self.xEditBox then
+            self.xEditBox:SetText("")
+            self.xEditBox:Disable()
+        end
+        if self.yEditBox then
+            self.yEditBox:SetText("")
+            self.yEditBox:Disable()
+        end
+
         self.upButton:Disable()
         self.downButton:Disable()
         self.leftButton:Disable()
         self.rightButton:Disable()
+
+        -- Clear the last updated frame when no frame is selected
+        if lastUpdatedFrame ~= nil then
+            lastUpdatedFrame = nil
+            updateAdvancedFromSelection()
+        end
     end
 end
 
 function NudgeFrame:UpdateVisibility()
-    -- Update nudge frame visibility and position
-    if EditModeManagerFrame and EditModeManagerFrame.editModeActive then
-        local selectedFrame, frameName = GetSelectedEditModeFrame()
-        if selectedFrame then
-            self:UpdatePosition()
-            self:Show()
-            self:UpdateInfo()
-        else
-            -- Hide if no frame selected
-            self:Hide()
-        end
+    -- Embed into the settings dialog instead of floating separately
+    if not EditModeManagerFrame or not EditModeManagerFrame.editModeActive then
+        self:Hide()
+        return
+    end
+
+    if EditModeSystemSettingsDialog and EditModeSystemSettingsDialog:IsShown() then
+        self:UpdatePosition()
+        self:Show()
+        self:UpdateInfo()
     else
         self:Hide()
     end
@@ -544,11 +921,9 @@ function NephUI:NudgeSelectedFrame(direction)
     return true
 end
 
--- Timer for periodic updates
-local updateTicker = nil
-
 local function SetupEditModeHooks()
     if not EditModeManagerFrame then return end
+    HookSettingsDialog()
     
     hooksecurefunc(EditModeManagerFrame, "EnterEditMode", function()
         if LibEditModeOverride and LibEditModeOverride:IsReady() then
@@ -560,35 +935,6 @@ local function SetupEditModeHooks()
         -- Enable click detection
         EnableClickDetection()
         
-        -- Start periodic update ticker (updates every 0.1 seconds)
-        if updateTicker then
-            updateTicker:Cancel()
-        end
-        updateTicker = C_Timer.NewTicker(0.1, function()
-            if EditModeManagerFrame and EditModeManagerFrame.editModeActive then
-                local selectedFrame = ScanForSelectedFrame()
-                if selectedFrame then
-                    if currentSelectedFrame ~= selectedFrame then
-                        currentSelectedFrame = selectedFrame
-                        currentSelectedFrameName = selectedFrame:GetName() or "Anonymous Frame"
-                    end
-                    if NudgeFrame then
-                        NudgeFrame:UpdatePosition()
-                        NudgeFrame:UpdateInfo()
-                        NudgeFrame:Show()
-                    end
-                else
-                    if currentSelectedFrame then
-                        currentSelectedFrame = nil
-                        currentSelectedFrameName = nil
-                    end
-                    if NudgeFrame then
-                        NudgeFrame:Hide()
-                    end
-                end
-            end
-        end)
-        
         -- Initial update
         NudgeFrame:UpdateVisibility()
     end)
@@ -596,16 +942,11 @@ local function SetupEditModeHooks()
     hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function()
         -- Disable click detection
         DisableClickDetection()
-        
-        -- Stop the ticker
-        if updateTicker then
-            updateTicker:Cancel()
-            updateTicker = nil
-        end
-        
+
         NudgeFrame:Hide()
         currentSelectedFrame = nil
         currentSelectedFrameName = nil
+        lastUpdatedFrame = nil
     end)
 end
 

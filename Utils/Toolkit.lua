@@ -14,14 +14,43 @@ local tonumber = tonumber
 local EnumerateFrames = EnumerateFrames
 local CreateFrame = CreateFrame
 
+local issecurevalue = issecurevalue
+
+local function CanAccessFrame(frame)
+	if not frame then
+		return false
+	end
+
+	if issecurevalue and issecurevalue(frame) then
+		return false
+	end
+
+	if frame.IsForbidden then
+		local ok, forbidden = pcall(frame.IsForbidden, frame)
+		if not ok or forbidden then
+			return false
+		end
+	end
+
+	return true
+end
+
 local function WatchPixelSnap(frame, snap)
-	if (frame and not frame:IsForbidden()) and frame.PixelSnapDisabled and snap then
+	if not CanAccessFrame(frame) then
+		return
+	end
+
+	if frame.PixelSnapDisabled and snap then
 		frame.PixelSnapDisabled = nil
 	end
 end
 
 local function DisablePixelSnap(frame)
-	if (frame and not frame:IsForbidden()) and not frame.PixelSnapDisabled then
+	if not CanAccessFrame(frame) then
+		return
+	end
+
+	if not frame.PixelSnapDisabled then
 		if frame.SetSnapToPixelGrid then
 			frame:SetSnapToPixelGrid(false)
 			frame:SetTexelSnappingBias(0)
