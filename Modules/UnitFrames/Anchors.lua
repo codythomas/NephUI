@@ -40,12 +40,10 @@ local function HideEditModeSelectionFrame(selectionFrame)
 end
 
 function UF:HideDefaultUnitFrames()
-    -- For evokers, make PlayerFrame clickthrough but don't hide it
-    -- For other classes, mask PlayerFrame normally
+    -- Make PlayerFrame clickthrough for all classes; mask it for non-evokers
     local _, playerClass = UnitClass("player")
-    if playerClass == "EVOKER" then
-        MakePlayerFrameClickthrough()
-    else
+    MakePlayerFrameClickthrough()
+    if playerClass ~= "EVOKER" then
         MaskFrame(PlayerFrame)
     end
     

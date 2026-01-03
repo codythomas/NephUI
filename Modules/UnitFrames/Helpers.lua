@@ -199,32 +199,41 @@ local function MaskFrame(unitFrame)
     end)
 end
 
--- Make PlayerFrame clickthrough for evokers when unit frame customization is enabled
+-- Make PlayerFrame clickthrough when unit frame customization is enabled
 local function MakePlayerFrameClickthrough()
     if not PlayerFrame then return end
     
     local db = NephUI.db.profile.unitFrames
     if not db or not db.enabled then return end
     
-    -- Check if player is evoker
-    local _, playerClass = UnitClass("player")
-    if playerClass ~= "EVOKER" then return end
-    
     -- Make PlayerFrame clickthrough and invisible
     PlayerFrame:SetAlpha(0)
     SafeDisableMouse(PlayerFrame)
     
     -- Hook OnShow to keep it clickthrough and invisible
-    if not PlayerFrame.__nephuiEvokerClickthroughHooked then
-        PlayerFrame.__nephuiEvokerClickthroughHooked = true
+    if not PlayerFrame.__nephuiClickthroughHooked then
+        PlayerFrame.__nephuiClickthroughHooked = true
         PlayerFrame:HookScript("OnShow", function(self)
             local db = NephUI.db.profile.unitFrames
-            local _, playerClass = UnitClass("player")
-            if db and db.enabled and playerClass == "EVOKER" then
+            if db and db.enabled then
                 self:SetAlpha(0)
                 SafeDisableMouse(self)
             end
         end)
+    end
+
+    local runeFrame = _G["RuneFrame"]
+    if runeFrame then
+        SafeDisableMouse(runeFrame)
+        if not runeFrame.__nephuiClickthroughHooked then
+            runeFrame.__nephuiClickthroughHooked = true
+            runeFrame:HookScript("OnShow", function(self)
+                local db = NephUI.db.profile.unitFrames
+                if db and db.enabled then
+                    SafeDisableMouse(self)
+                end
+            end)
+        end
     end
 end
 

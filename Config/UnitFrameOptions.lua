@@ -2293,8 +2293,8 @@ local function CreateUnitFrameOptions(unit, displayName, order)
         tabs.absorbBar = CreateAbsorbBarTab()
     end
     
-    -- Add Buffs and Debuffs tabs for player, focus, and target frames
-    if unit == "player" or unit == "focus" or unit == "target" then
+    -- Add Buffs and Debuffs tabs for player, focus, target, and boss frames
+    if unit == "player" or unit == "focus" or unit == "target" or unit == "boss" then
         tabs.buffs = CreateBuffsTab()
         tabs.debuffs = CreateDebuffsTab()
     end

@@ -427,17 +427,30 @@ function QOL:InitializeTooltipIDs()
             local kind = tooltipKindsByID[tonumber(data.type)]
 
             -- unit special handling
-            if kind == "unit" and data and data.guid then
-                local unitId = tonumber(data.guid:match("-(%d+)-%x+$"), 10)
-                if unitId and data.guid:match("%a+") ~= "Player" then
-                    tooltipAdd(tooltip, unitId, "unit")
+            if kind == "unit" and data then
+                -- Safely check if we can access guid (it becomes a secret value in combat)
+                local guid = data.guid
+                if guid and type(guid) == "string" then
+                    local unitId = tonumber(guid:match("-(%d+)-%x+$"), 10)
+                    if unitId and guid:match("%a+") ~= "Player" then
+                        tooltipAdd(tooltip, unitId, "unit")
+                    else
+                        tooltipAdd(tooltip, data.id, "unit")
+                    end
                 else
+                    -- Fallback to data.id when guid is not accessible
                     tooltipAdd(tooltip, data.id, "unit")
                 end
-            elseif kind == "item" and data and data.guid and GetItemLinkByGUID then
-                local link = GetItemLinkByGUID(data.guid)
-                if link then
-                    tooltipAddItemInfo(tooltip, link)
+            elseif kind == "item" and data then
+                -- Safely check if we can access guid for items
+                local guid = data.guid
+                if guid and type(guid) == "string" and GetItemLinkByGUID then
+                    local link = GetItemLinkByGUID(guid)
+                    if link then
+                        tooltipAddItemInfo(tooltip, link)
+                    else
+                        tooltipAdd(tooltip, data.id, kind)
+                    end
                 else
                     tooltipAdd(tooltip, data.id, kind)
                 end

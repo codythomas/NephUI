@@ -2,7 +2,7 @@
 ## Title: NephUI
 ## Notes: Lightweight UI Overhaul AddOn
 ## Author: Nephuhlim
-## Version: 1.33
+## Version: 1.34
 ## SavedVariables: NephUIDB
 ## OptionalDeps: Ace3, LibSharedMedia-3.0
 ## X-TaintLess-DisableMitigations: CUF_PROFILE_ACTIVATE_PATCH_VERSION=1

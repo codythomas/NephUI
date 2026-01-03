@@ -86,6 +86,19 @@ local function SafeUnitHealthPercent(unit, includeAbsorbs, includePredicted)
         end
     end
 
+    -- Midnight fallback: use UnitHealthMissing if available (includes absorbs)
+    if IS_MIDNIGHT_OR_LATER and type(UnitHealthMissing) == "function" then
+        local ok, missing = pcall(UnitHealthMissing, unit, includeAbsorbs)
+        if ok and missing ~= nil and type(missing) == "number" then
+            local max = UnitHealthMax(unit)
+            if max and max > 0 then
+                local cur = max - missing
+                local pct = (cur / max) * 100
+                return math.min(100, math.max(0, pct))
+            end
+        end
+    end
+
     -- Retail fallback: compute from current/max (optionally including absorbs)
     if UnitHealth and UnitHealthMax then
         local cur = UnitHealth(unit)
@@ -168,9 +181,9 @@ local function UpdateUnitFrame(self, event, eventUnit, ...)
     local unit = self.unit
     if not unit or not UnitExists(unit) then return end
     
-    -- Handle UNIT_AURA events for player, focus, and target frames
+    -- Handle UNIT_AURA events for player, focus, target, and boss frames
     if event == "UNIT_AURA" then
-        if (unit == "player" or unit == "focus" or unit == "target") and eventUnit == unit then
+        if (unit == "player" or unit == "focus" or unit == "target" or unit:match("^boss%d+$")) and eventUnit == unit then
             if UpdateUnitAuras then
                 UpdateUnitAuras(self)
             end
@@ -207,12 +220,33 @@ local function UpdateUnitFrame(self, event, eventUnit, ...)
     
     local unitHealth = UnitHealth(unit)
     local unitMaxHealth = UnitHealthMax(unit)
-    local unitColorR, unitColorG, unitColorB = FetchUnitColor(unit, DB, GeneralDB)
-    
+    local unitColorR, unitColorG, unitColorB, unitColorA = FetchUnitColor(unit, DB, GeneralDB)
+
+    -- Use UnitHealthMissing API if available (Midnight+)
+    local unitHealthMissing = 0
+    if IS_MIDNIGHT_OR_LATER and type(UnitHealthMissing) == "function" then
+        unitHealthMissing = UnitHealthMissing(unit, true) or 0 -- Include absorbs
+    else
+        -- Fallback: calculate missing health manually (including absorbs)
+        local absorbs = UnitGetTotalAbsorbs and UnitGetTotalAbsorbs(unit) or 0
+        unitHealthMissing = unitMaxHealth - unitHealth - absorbs
+        unitHealthMissing = math.max(0, unitHealthMissing) -- Ensure not negative
+    end
+
     if self.healthBar then
         self.healthBar:SetMinMaxValues(0, unitMaxHealth)
         self.healthBar:SetValue(unitHealth)
-        self.healthBar:SetStatusBarColor(unitColorR, unitColorG, unitColorB)
+        self.healthBar:SetStatusBarColor(unitColorR, unitColorG, unitColorB, unitColorA)
+    end
+
+    -- Update background health bar to show missing health
+    if self.healthBarBG then
+        self.healthBarBG:SetMinMaxValues(0, unitMaxHealth)
+        self.healthBarBG:SetValue(unitHealthMissing)
+
+        -- Set background color (missing health color)
+        local bgR, bgG, bgB, bgA = unpack(DB.Frame.BGColor)
+        self.healthBarBG:SetStatusBarColor(bgR, bgG, bgB, bgA)
     end
     
     if self.HealthText then
@@ -332,8 +366,8 @@ local function UpdateUnitFrame(self, event, eventUnit, ...)
         UpdateStatusIndicators(self, DB)
     end
     
-    -- Update unit auras if this is a player, focus, or target frame (always update, not just on specific events)
-    if (unit == "player" or unit == "focus" or unit == "target") and UpdateUnitAuras then
+    -- Update unit auras if this is a player, focus, target, or boss frame (always update, not just on specific events)
+    if (unit == "player" or unit == "focus" or unit == "target" or unit:match("^boss%d+$")) and UpdateUnitAuras then
         UpdateUnitAuras(self)
     end
 end
@@ -403,26 +437,32 @@ function UF:UpdateUnitFrame(unit)
     end
     
     unitFrame:SetBackdrop({
-        bgFile = self.Media.BackgroundTexture,
         edgeFile = "Interface\\Buttons\\WHITE8X8",
         edgeSize = 1
     })
-    unitFrame:SetBackdropColor(unpack(DB.Frame.BGColor))
+    unitFrame:SetBackdropColor(0, 0, 0, 0) -- Transparent background
     unitFrame:SetBackdropBorderColor(0, 0, 0, 1)
     
     if self.UpdateMouseoverHighlight then
         self.UpdateMouseoverHighlight(unitFrame)
     end
     
+    -- Update foreground health bar (current health)
     local unitHealthBar = unitFrame.healthBar
-    local unitHealthBG = unitHealthBar.BG
     unitHealthBar:ClearAllPoints()
     unitHealthBar:SetPoint("TOPLEFT", unitFrame, "TOPLEFT", 1, -1)
     unitHealthBar:SetPoint("BOTTOMRIGHT", unitFrame, "BOTTOMRIGHT", -1, 1)
     unitFrame.healthBar:SetStatusBarTexture(self.Media.ForegroundTexture)
-    
-    local bgR, bgG, bgB, bgA = unpack(DB.Frame.BGColor)
-    unitHealthBG:SetVertexColor(bgR, bgG, bgB, bgA)
+
+    -- Update background health bar (missing health)
+    if unitFrame.healthBarBG then
+        unitFrame.healthBarBG:ClearAllPoints()
+        unitFrame.healthBarBG:SetAllPoints(unitFrame.healthBar)
+        unitFrame.healthBarBG:SetStatusBarTexture(self.Media.BackgroundTexture)
+
+        local bgR, bgG, bgB, bgA = unpack(DB.Frame.BGColor)
+        unitFrame.healthBarBG:SetStatusBarColor(bgR, bgG, bgB, bgA)
+    end
     
     -- Ensure media is resolved with latest global font
     self:ResolveMedia()
@@ -610,8 +650,8 @@ function UF:UpdateUnitFrame(unit)
             unitFrame:RegisterEvent("UNIT_POWER_UPDATE")
             unitFrame:RegisterEvent("UNIT_MAXPOWER")
         end
-        -- Register UNIT_AURA for target frame to update auras
-        if unit == "target" then
+        -- Register UNIT_AURA for target and boss frames to update auras
+        if unit == "target" or unit:match("^boss%d+$") then
             unitFrame:RegisterEvent("UNIT_AURA")
         end
         -- Special event for targettarget: listen to when target's target changes
@@ -681,8 +721,8 @@ function UF:UpdateUnitFrame(unit)
         UpdateUnitFramePowerBar(unitPowerBar)
     end
     
-    -- Update unit auras if this is a player, focus, or target frame
-    if (unit == "player" or unit == "focus" or unit == "target") and UpdateUnitAuras then
+    -- Update unit auras if this is a player, focus, target, or boss frame
+    if (unit == "player" or unit == "focus" or unit == "target" or unit:match("^boss%d+$")) and UpdateUnitAuras then
         UpdateUnitAuras(unitFrame)
     end
 

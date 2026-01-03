@@ -15,36 +15,9 @@ local UPDATE_THROTTLE = 0.066  -- 66ms minimum between updates (~15fps)
 -- Get functions from sub-modules
 local GetPrimaryResource = ResourceBars.GetPrimaryResource
 local GetSecondaryResource = ResourceBars.GetSecondaryResource
-local EnsureDemonHunterSoulBar = ResourceBars.EnsureDemonHunterSoulBar
 
--- Soul fragments are still only exposed via Blizzard's hidden PlayerFrame bar,
--- so we poll that bar out of band to keep our secondary bar updated.
-local soulUpdateTicker = nil
 local runeUpdateTicker = nil
 
-local function StopSoulUpdateTicker()
-    if soulUpdateTicker then
-        soulUpdateTicker:Cancel()
-        soulUpdateTicker = nil
-    end
-end
-
-local function StartSoulUpdateTicker()
-    if soulUpdateTicker then return end
-
-    -- Make sure the Blizzard soul fragments bar exists and is unhidden
-    EnsureDemonHunterSoulBar()
-
-    soulUpdateTicker = C_Timer.NewTicker(0.1, function()
-        local resource = GetSecondaryResource()
-        if resource == "SOUL" then
-            lastSecondaryUpdate = GetTime()
-            ResourceBars:UpdateSecondaryPowerBar()
-        else
-            StopSoulUpdateTicker()
-        end
-    end)
-end
 
 local function StopRuneUpdateTicker()
     if runeUpdateTicker then
@@ -149,9 +122,6 @@ end
 -- EVENT HANDLERS
 
 function ResourceBars:OnSpecChanged()
-    -- Ensure Demon Hunter soul bar is spawned when spec changes
-    EnsureDemonHunterSoulBar()
-
     local now = GetTime()
     lastPrimaryUpdate = now
     lastSecondaryUpdate = now
@@ -159,12 +129,6 @@ function ResourceBars:OnSpecChanged()
     self:UpdateSecondaryPowerBar()
 
     local resource = GetSecondaryResource()
-    if resource == "SOUL" then
-        StartSoulUpdateTicker()
-    else
-        StopSoulUpdateTicker()
-    end
-
     if resource == Enum.PowerType.Runes and AreRunesRecharging() then
         StartRuneUpdateTicker()
     else
@@ -192,7 +156,6 @@ function ResourceBars:Initialize()
         ResourceBars:OnShapeshiftChanged()
     end)
     NephUI:RegisterEvent("PLAYER_ENTERING_WORLD", function()
-        EnsureDemonHunterSoulBar()
         ResourceBars:OnUnitPower()
     end)
 
@@ -216,17 +179,7 @@ function ResourceBars:Initialize()
         ResourceBars:OnRuneEvent()
     end)
 
-    -- Ensure Demon Hunter soul bar is spawned
-    EnsureDemonHunterSoulBar()
-
-    -- Start/stop soul fragments polling based on the current resource
     local resource = GetSecondaryResource()
-    if resource == "SOUL" then
-        StartSoulUpdateTicker()
-    else
-        StopSoulUpdateTicker()
-    end
-
     if resource == Enum.PowerType.Runes and AreRunesRecharging() then
         StartRuneUpdateTicker()
     else

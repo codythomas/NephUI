@@ -7,12 +7,15 @@ if not UF then
     error("NephUI: UnitFrames module not initialized! Load UnitFrames.lua first.")
 end
 
+local TruncateWhenZero = C_StringUtil and C_StringUtil.TruncateWhenZero
+
 -- Update unit auras (buffs/debuffs)
 local function UpdateUnitAuras(frame)
     if not frame or not frame.unit then return end
 
     local unit = frame.unit
-    if not UnitExists(unit) then
+    local isBossPreview = UF.BossPreviewMode and unit:match("^boss%d+$")
+    if not UnitExists(unit) and not isBossPreview then
         if frame.buffIcons then
             for _, iconFrame in ipairs(frame.buffIcons) do
                 iconFrame:Hide()
@@ -26,13 +29,15 @@ local function UpdateUnitAuras(frame)
         return
     end
 
-    if not C_UnitAuras or not C_UnitAuras.GetAuraDataByIndex then
-        return
-    end
+    local hasAuraAPI = C_UnitAuras and C_UnitAuras.GetAuraDataByIndex
 
     local db = NephUI.db.profile.unitFrames
     if not db then return end
-    local DB = db[unit]  -- Get unit-specific DB (player, focus, target)
+    local dbUnit = unit
+    if unit:match("^boss%d+$") then
+        dbUnit = "boss"
+    end
+    local DB = db[dbUnit]
     local GeneralDB = db.General
     if not DB then return end
 
@@ -107,7 +112,12 @@ local function UpdateUnitAuras(frame)
             iconFrame.icon = tex
 
             -- Stack/count text
-            local countText = iconFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+            local countOverlay = CreateFrame("Frame", nil, iconFrame)
+            countOverlay:SetAllPoints(iconFrame)
+            countOverlay:SetFrameLevel(iconFrame:GetFrameLevel() + 11)
+            iconFrame.countOverlay = countOverlay
+
+            local countText = countOverlay:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
             countText:SetPoint("BOTTOMRIGHT", iconFrame, "BOTTOMRIGHT", -1, 1)
             countText:SetJustifyH("RIGHT")
             countText:SetJustifyV("BOTTOM")
@@ -176,6 +186,10 @@ local function UpdateUnitAuras(frame)
         else
             iconFrame:SetSize(iconSize, iconSize)
             iconFrame:SetAlpha(auraAlpha)
+            if iconFrame.countOverlay then
+                iconFrame.countOverlay:SetAllPoints(iconFrame)
+                iconFrame.countOverlay:SetFrameLevel(iconFrame:GetFrameLevel() + 11)
+            end
             -- Ensure border is still properly anchored and shown if it exists
             if iconFrame.border then
                 -- Anchor to iconFrame (not texture) to avoid "secret value" errors
@@ -260,25 +274,11 @@ local function UpdateUnitAuras(frame)
 
             -- Update stack/count text
             if iconFrame.countText then
-                local countText = nil
-
-                -- Use display count from C_UnitAuras directly
-                if C_UnitAuras and C_UnitAuras.GetAuraApplicationDisplayCount and auraData.auraInstanceID then
-                    local ok, displayCount = pcall(C_UnitAuras.GetAuraApplicationDisplayCount, unit, auraData.auraInstanceID)
-                    if ok then
-                        local okToString, asString = pcall(tostring, displayCount)
-                        if okToString then
-                            countText = asString
-                        end
-                    end
-                end
-
-                if countText then
-                    iconFrame.countText:SetText(countText)
-                    iconFrame.countText:Show()
+                local count = auraData.applications
+                if TruncateWhenZero then
+                    iconFrame.countText:SetText(TruncateWhenZero(count))
                 else
-                    iconFrame.countText:SetText("")
-                    iconFrame.countText:Hide()
+                    iconFrame.countText:SetText(count and tostring(count) or "")
                 end
             end
 
@@ -421,8 +421,10 @@ local function UpdateUnitAuras(frame)
     local maxDebuffRows = totalRowLimit > 0 and totalRowLimit or 999
 
     -- Show real debuffs unless preview is enabled
-    if showDebuffs and not debuffSettings.Preview then
-        Populate(frame.debuffIcons, "HARMFUL|PLAYER", false, 0, maxDebuffRows, debuffIconSize, debuffOffsetX, debuffOffsetY, debuffSpacing, debuffAlpha, debuffMaxPerRow, debuffAnchorPoint, debuffGrowthDirection, debuffRowGrowthDirection)
+    if showDebuffs and not debuffSettings.Preview and hasAuraAPI then
+        -- Use different debuff filters based on unit type
+        local debuffFilter = (unit == "player") and "HARMFUL" or "HARMFUL|PLAYER"
+        Populate(frame.debuffIcons, debuffFilter, false, 0, maxDebuffRows, debuffIconSize, debuffOffsetX, debuffOffsetY, debuffSpacing, debuffAlpha, debuffMaxPerRow, debuffAnchorPoint, debuffGrowthDirection, debuffRowGrowthDirection)
     end
 
     -- Buff rows do not inherit debuff rows; they use their own anchor/offset
@@ -430,7 +432,7 @@ local function UpdateUnitAuras(frame)
     local maxBuffRows = totalRowLimit > 0 and totalRowLimit or 999
 
     -- Show real buffs unless preview is enabled
-    if showBuffs and maxBuffRows > 0 and not buffSettings.Preview then
+    if showBuffs and maxBuffRows > 0 and not buffSettings.Preview and hasAuraAPI then
         Populate(frame.buffIcons, "HELPFUL", true, buffRowOffset, maxBuffRows, buffIconSize, buffOffsetX, buffOffsetY, buffSpacing, buffAlpha, buffMaxPerRow, buffAnchorPoint, buffGrowthDirection, buffRowGrowthDirection)
     end
 

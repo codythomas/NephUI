@@ -310,12 +310,31 @@ function UF:ApplyBossPreviewData(unitFrame, bossIndex)
         healthBar:SetMinMaxValues(0, fakeData.maxHealth)
         healthBar:SetValue(fakeData.health)
         healthBar:SetStatusBarColor(healthR, healthG, healthB, healthA)
+        local baseLevel = unitFrame:GetFrameLevel() or 0
+        healthBar:SetFrameLevel(baseLevel + 1)
+        healthBar:SetAlpha(healthA or 1)
+        healthBar:Show()
+
+        local healthBarTexture = healthBar:GetStatusBarTexture()
+        if healthBarTexture then
+            healthBarTexture:SetAlpha(healthA or 1)
+            healthBarTexture:SetDrawLayer("ARTWORK", 1)
+        end
 
         if healthBar.BG then
             local bgColor = frameDB.BGColor or { 0.1, 0.1, 0.1, 0.8 }
             healthBar.BG:SetTexture(self.Media.BackgroundTexture)
             healthBar.BG:SetVertexColor(bgColor[1] or 0.1, bgColor[2] or 0.1, bgColor[3] or 0.1, bgColor[4] or 0.8)
         end
+    end
+
+    if unitFrame.healthBarBG then
+        local bgColor = frameDB.BGColor or { 0.1, 0.1, 0.1, 0.8 }
+        unitFrame.healthBarBG:SetMinMaxValues(0, fakeData.maxHealth)
+        unitFrame.healthBarBG:SetValue(fakeData.missingHealth or (fakeData.maxHealth - fakeData.health))
+        unitFrame.healthBarBG:SetStatusBarColor(bgColor[1] or 0.1, bgColor[2] or 0.1, bgColor[3] or 0.1, bgColor[4] or 0.8)
+        unitFrame.healthBarBG:SetFrameLevel((healthBar and healthBar:GetFrameLevel() or unitFrame:GetFrameLevel() or 0) - 1)
+        unitFrame.healthBarBG:Show()
     end
 
     -- Apply fake power data
@@ -360,11 +379,16 @@ function UF:ApplyBossPreviewData(unitFrame, bossIndex)
         end
     end
 
-    -- Apply fake absorb data
+    if self.UpdateHealthBarForPower then
+        self.UpdateHealthBarForPower(unitFrame, unitFrame.unit or ("boss" .. bossIndex), bossDB)
+    end
+
+    -- Apply fake absorb data (hide during preview so health texture is visible)
     local absorbBar = unitFrame.__nephuiAbsorbBar
-    if absorbBar and fakeData.absorb > 0 then
+    if absorbBar then
         absorbBar:SetMinMaxValues(0, fakeData.maxHealth)
-        absorbBar:SetValue(fakeData.absorb)
+        absorbBar:SetValue(0)
+        absorbBar:Hide()
     end
 
     -- Set fake portrait

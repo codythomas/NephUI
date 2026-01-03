@@ -56,6 +56,14 @@ function ResourceBars:GetPowerBar()
     bar.StatusBar:SetStatusBarTexture(tex)
     bar.StatusBar:SetFrameLevel(bar:GetFrameLevel())
 
+    -- Hide the StatusBar's internal background texture so it doesn't interfere with our custom solid color background
+    for i = 1, select("#", bar.StatusBar:GetRegions()) do
+        local region = select(i, bar.StatusBar:GetRegions())
+        if region:GetObjectType() == "Texture" and region ~= bar.StatusBar:GetStatusBarTexture() then
+            region:Hide()
+        end
+    end
+
     -- BORDER
     bar.Border = CreateFrame("Frame", nil, bar, "BackdropTemplate")
     local borderSize = NephUI:ScaleBorder(cfg.borderSize or 1)
@@ -165,6 +173,14 @@ function ResourceBars:UpdatePowerBar()
     if bar._lastTexture ~= tex then
         bar.StatusBar:SetStatusBarTexture(tex)
         bar._lastTexture = tex
+
+        -- Re-hide the StatusBar's internal background texture after texture change
+        for i = 1, select("#", bar.StatusBar:GetRegions()) do
+            local region = select(i, bar.StatusBar:GetRegions())
+            if region:GetObjectType() == "Texture" and region ~= bar.StatusBar:GetStatusBarTexture() then
+                region:Hide()
+            end
+        end
     end
 
     -- Update border size and color
@@ -190,7 +206,7 @@ function ResourceBars:UpdatePowerBar()
     end
 
     -- Get resource values
-    local max, current, displayValue, valueType = GetPrimaryResourceValue(resource, cfg)
+    local max, _, current, displayValue, valueType = GetPrimaryResourceValue(resource, cfg)
     if not max then
         bar:Hide()
         return

@@ -204,7 +204,7 @@ local function GetResourceColor(resource)
     end
 
     if resource == "STAGGER" then
-        -- Monk stagger uses dynamic coloring similar to Blizzard: green <30%, yellow <60%, red otherwise
+        -- Monk stagger uses dynamic coloring based on configurable thresholds
         local stagger = UnitStagger("player") or 0
         local maxHealth = UnitHealthMax("player") or 1
         local percent = 0
@@ -212,21 +212,25 @@ local function GetResourceColor(resource)
             percent = (stagger / maxHealth) * 100
         end
 
+        -- Use configurable colors if available, otherwise fall back to defaults
         if percent >= 60 then
-            color = { r = 1.00, g = 0.42, b = 0.42 }
+            -- Heavy stagger - use configured heavy color or default red
+            local heavyColor = NephUI.db and NephUI.db.profile and NephUI.db.profile.powerTypeColors and NephUI.db.profile.powerTypeColors.colors and NephUI.db.profile.powerTypeColors.colors["STAGGER_HEAVY"]
+            color = heavyColor or { r = 1.00, g = 0.42, b = 0.42 }
         elseif percent >= 30 then
-            color = { r = 1.00, g = 0.98, b = 0.72 }
+            -- Medium stagger - use configured medium color or default yellow
+            local mediumColor = NephUI.db and NephUI.db.profile and NephUI.db.profile.powerTypeColors and NephUI.db.profile.powerTypeColors.colors and NephUI.db.profile.powerTypeColors.colors["STAGGER_MEDIUM"]
+            color = mediumColor or { r = 1.00, g = 0.98, b = 0.72 }
         else
-            color = { r = 0.52, g = 1.00, b = 0.52 }
+            -- Light stagger - use configured light color or default green
+            local lightColor = NephUI.db and NephUI.db.profile and NephUI.db.profile.powerTypeColors and NephUI.db.profile.powerTypeColors.colors and NephUI.db.profile.powerTypeColors.colors["STAGGER_LIGHT"]
+            color = lightColor or { r = 0.52, g = 1.00, b = 0.52 }
         end
 
     elseif resource == "SOUL" then
         -- Demon Hunter soul fragments
         color = { r = 0.64, g = 0.19, b = 0.79 }
 
-    elseif resource == Enum.PowerType.SoulShards then
-        -- Warlock soul shards (WARLOCK class color)
-        color = { r = 0.58, g = 0.51, b = 0.79 }
 
     elseif resource == Enum.PowerType.Runes then
         -- Death Knight
@@ -235,6 +239,10 @@ local function GetResourceColor(resource)
     elseif resource == Enum.PowerType.Essence then
         -- Evoker
         color = { r = 0.20, g = 0.58, b = 0.50 }
+
+    elseif resource == Enum.PowerType.SoulShards then
+        -- Warlock soul shards (WARLOCK class color)
+        color = { r = 0.58, g = 0.51, b = 0.79 }
 
     elseif resource == Enum.PowerType.ComboPoints then
         -- Rogue
@@ -295,25 +303,25 @@ end
 -- GET RESOURCE VALUES
 
 local function GetPrimaryResourceValue(resource, cfg)
-    if not resource then return nil, nil, nil, nil end
+    if not resource then return nil, nil, nil, nil, nil end
 
     local current = UnitPower("player", resource)
     local max = UnitPowerMax("player", resource)
-    if max <= 0 then return nil, nil, nil, nil end
+    if max <= 0 then return nil, nil, nil, nil, nil end
 
     if cfg.showManaAsPercent and resource == Enum.PowerType.Mana then
         local percent = SafeUnitPowerPercent("player", resource, false)
         if percent ~= nil then
-            return max, current, percent, "percent"
+            return max, max, current, percent, "percent"
         end
-        return max, current, math.floor((current / max) * 100 + 0.5), "percent"
+        return max, max, current, math.floor((current / max) * 100 + 0.5), "percent"
     else
-        return max, current, current, "number"
+        return max, max, current, current, "number"
     end
 end
 
 local function GetSecondaryResourceValue(resource, cfg)
-    if not resource then return nil, nil, nil, nil end
+    if not resource then return nil, nil, nil, nil, nil end
 
     -- Allow callers to pass config for formatting; fall back to current DB if omitted
     cfg = cfg or (NephUI.db and NephUI.db.profile and NephUI.db.profile.secondaryPowerBar) or {}
@@ -321,14 +329,14 @@ local function GetSecondaryResourceValue(resource, cfg)
     if resource == "STAGGER" then
         local stagger = UnitStagger("player") or 0
         local maxHealth = UnitHealthMax("player") or 1
-        return maxHealth, stagger, stagger, "number"
+        return maxHealth, maxHealth, stagger, stagger, "number"
     end
 
     if resource == "SOUL" then
         -- DH souls – get from default Blizzard bar
         local soulBar = _G["DemonHunterSoulFragmentsBar"]
-        if not soulBar then return nil, nil, nil, nil end
-        
+        if not soulBar then return nil, nil, nil, nil, nil end
+
         -- Ensure the bar is shown (even if PlayerFrame is hidden)
         if not soulBar:IsShown() then
             soulBar:Show()
@@ -338,7 +346,7 @@ local function GetSecondaryResourceValue(resource, cfg)
         local current = soulBar:GetValue()
         local _, max = soulBar:GetMinMaxValues()
 
-        return max, current, current, "number"
+        return max, max, current, current, "number"
     end
 
     if resource == "MAELSTROM_WEAPON" then
@@ -347,7 +355,7 @@ local function GetSecondaryResourceValue(resource, cfg)
 
         -- Check if WoW API is available
         if not C_UnitAuras or not C_UnitAuras.GetAuraDataByIndex then
-            return 10, 0, 0, "number"
+            return 10, 10, 0, 0, "number"
         end
 
         -- Iterate through all buffs to find maelstrom weapon
@@ -365,13 +373,13 @@ local function GetSecondaryResourceValue(resource, cfg)
             if i > 50 then break end -- Safety limit
         end
 
-        return 10, current, current, "number"
+        return 10, 10, current, current, "number"
     end
 
     if resource == Enum.PowerType.Runes then
         local current = 0
         local max = UnitPowerMax("player", resource)
-        if max <= 0 then return nil, nil, nil, nil end
+        if max <= 0 then return nil, nil, nil, nil, nil end
 
         for i = 1, max do
             local runeReady = select(3, GetRuneCooldown(i))
@@ -380,49 +388,39 @@ local function GetSecondaryResourceValue(resource, cfg)
             end
         end
 
-        return max, current, current, "number"
+        if cfg.textFormat == "Percent" or cfg.textFormat == "Percent%" then
+            return max, max, current, math.floor((current / max) * 100 + 0.5), "percent"
+        else
+            return max, max, current, current, "number"
+        end
     end
 
     if resource == Enum.PowerType.SoulShards then
-        local _, class = UnitClass("player")
-        if class == "WARLOCK" then
-            local spec = GetSpecialization()
+        local current = UnitPower("player", resource, true)
+        local max = UnitPowerMax("player", resource, true)
+        if max <= 0 then return nil, nil, nil, nil, nil end
 
-            -- Destruction: use FRAGMENTS (0–50) for bar, display decimal shards (3.5)
-            if spec == 3 then
-                local current = UnitPower("player", resource, true)          -- 0–50
-                local max     = UnitPowerMax("player", resource, true)       -- 0–50
-                if max <= 0 then return nil, nil, nil, nil end
-
-                -- bar = fragments, text = shards with one decimal place (3.5)
-                return max, current, current / 10, "decimal"
-            end
+        if cfg.textFormat == "Percent" or cfg.textFormat == "Percent%" then
+            return max, max, current, math.floor((current / max) * 100 + 0.5), "percent"
+        else
+            return max, max / 10, current, current / 10, "number"
         end
-
-        -- Any other spec/class that somehow hits SoulShards:
-        -- use NORMAL shard count (0–5) for both bar + text
-        local current = UnitPower("player", resource)             -- 0–5
-        local max     = UnitPowerMax("player", resource)          -- 0–5
-        if max <= 0 then return nil, nil, nil, nil end
-
-        -- bar = 0–5, text = 3, 4, 5 etc.
-        return max, current, current, "number"
     end
 
     -- Default case for all other power types (ComboPoints, Chi, HolyPower, Mana, etc.)
     local current = UnitPower("player", resource)
     local max = UnitPowerMax("player", resource)
-    if max <= 0 then return nil, nil, nil, nil end
+        if max <= 0 then return nil, nil, nil, nil, nil end
 
     if cfg.showManaAsPercent and resource == Enum.PowerType.Mana then
         local percent = SafeUnitPowerPercent("player", resource, false)
         if percent ~= nil then
-            return max, current, percent, "percent"
+            return max, max, current, percent, "percent"
         end
-        return max, current, math.floor((current / max) * 100 + 0.5), "percent"
+        return max, max, current, math.floor((current / max) * 100 + 0.5), "percent"
     end
 
-    return max, current, current, "number"
+    return max, max, current, current, "number"
 end
 
 -- Export functions

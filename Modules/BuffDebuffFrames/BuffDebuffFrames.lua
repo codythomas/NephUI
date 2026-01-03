@@ -136,9 +136,9 @@ local function EnhanceAuraFrame(auraFrame, config)
                 end
                 auraFrame.Duration:SetDrawLayer("OVERLAY", 2)
                 
-                local anchorPoint = durConfig.anchorPoint or "BOTTOM"
+                local anchorPoint = durConfig.anchorPoint or "CENTER"
                 local offsetX = durConfig.offsetX or 0
-            local offsetY = durConfig.offsetY or -2
+                local offsetY = durConfig.offsetY or 0
             
             auraFrame.Duration:SetPoint(anchorPoint, icon, anchorPoint, offsetX, offsetY)
             auraFrame.Duration:SetFont(font, durConfig.fontSize or 12, durConfig.fontFlag or "OUTLINE")
@@ -324,7 +324,8 @@ local function HookEditMode()
 
     if EditModeManagerFrame then
         local function RefreshOnEditMode()
-            C_Timer.After(0.2, function()
+            C_Timer.After(0.5, function()
+                styledAuras = {} -- Clear cache so frames get re-styled after edit mode
                 ProcessBuffFrames()
                 ProcessDebuffFrames()
             end)

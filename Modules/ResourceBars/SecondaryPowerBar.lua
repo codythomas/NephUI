@@ -105,12 +105,6 @@ function ResourceBars:GetSecondaryPowerBar()
     bar.TextValue:SetShadowOffset(0, 0)
     bar.TextValue:SetText("0")
 
-    -- Fake decimal for Destro shards
-    bar.SoulShardDecimal = bar.TextFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    bar.SoulShardDecimal:SetFont(NephUI:GetGlobalFont(), cfg.textSize or 12, "OUTLINE")
-    bar.SoulShardDecimal:SetShadowOffset(0, 0)
-    bar.SoulShardDecimal:SetText(".")
-    bar.SoulShardDecimal:Hide()
 
     -- FRAGMENTED POWER BARS (for Runes)
     bar.FragmentedPowerBars = {}
@@ -156,20 +150,15 @@ function ResourceBars:UpdateChargedPowerSegments(bar, resource, max)
         return
     end
 
-    -- Use display max for ticked resources (soul shards can be fractional internally)
-    local displayMax = max
-    if resource == Enum.PowerType.SoulShards then
-        displayMax = UnitPowerMax("player", resource)
-    end
-    if not displayMax or displayMax <= 0 then
+    if not max or max <= 0 then
         return
     end
 
-    local segmentWidth = width / displayMax
+    local segmentWidth = width / max
     local chargedColor = cfg.chargedColor or { 0.22, 0.62, 1.0, 0.8 }
 
     for _, index in ipairs(chargedPoints) do
-        if index >= 1 and index <= displayMax then
+        if index >= 1 and index <= max then
             local segment = bar.ChargedSegments[index]
             if not segment then
                 segment = bar.ChargedFrame:CreateTexture(nil, "ARTWORK")
@@ -239,7 +228,8 @@ function ResourceBars:UpdateFragmentedPowerDisplay(bar, resource)
     end
 
     local color
-    if cfg.useClassColor then
+    local powerTypeColors = NephUI.db.profile.powerTypeColors
+    if powerTypeColors.useClassColor then
         local _, class = UnitClass("player")
         local classColor = RAID_CLASS_COLORS[class]
         if classColor then
@@ -247,12 +237,10 @@ function ResourceBars:UpdateFragmentedPowerDisplay(bar, resource)
         else
             color = GetResourceColor(resource)
         end
-    elseif cfg.color then
-        -- Custom color from GUI
-        local r, g, b, a = cfg.color[1], cfg.color[2], cfg.color[3], cfg.color[4] or 1
-        color = { r = r, g = g, b = b }
+    elseif powerTypeColors.colors[resource] then
+        local r, g, b, a = powerTypeColors.colors[resource][1], powerTypeColors.colors[resource][2], powerTypeColors.colors[resource][3], powerTypeColors.colors[resource][4] or 1
+        color = { r = r, g = g, b = b, a = a }
     else
-        -- Default resource color
         color = GetResourceColor(resource)
     end
 
@@ -321,12 +309,13 @@ function ResourceBars:UpdateFragmentedPowerDisplay(bar, resource)
                     runeText:SetShadowOffset(0, 0)
                 end
 
+                local alpha = color.a or 1
                 if readyLookup[runeIndex] then
                     -- Ready rune
                     runeFrame:SetMinMaxValues(0, 1)
                     runeFrame:SetValue(1)
                     runeText:SetText("")
-                    runeFrame:SetStatusBarColor(color.r, color.g, color.b)
+                    runeFrame:SetStatusBarColor(color.r, color.g, color.b, alpha)
                 else
                     -- Recharging rune
                     local cdInfo = cdLookup[runeIndex]
@@ -341,12 +330,12 @@ function ResourceBars:UpdateFragmentedPowerDisplay(bar, resource)
                             runeText:SetText("")
                         end
                         
-                        runeFrame:SetStatusBarColor(color.r * 0.5, color.g * 0.5, color.b * 0.5)
+                        runeFrame:SetStatusBarColor(color.r * 0.5, color.g * 0.5, color.b * 0.5, alpha)
                     else
                         runeFrame:SetMinMaxValues(0, 1)
                         runeFrame:SetValue(0)
                         runeText:SetText("")
-                        runeFrame:SetStatusBarColor(color.r * 0.5, color.g * 0.5, color.b * 0.5)
+                        runeFrame:SetStatusBarColor(color.r * 0.5, color.g * 0.5, color.b * 0.5, alpha)
                     end
                 end
 
@@ -403,7 +392,7 @@ end
 
 function ResourceBars:UpdateSecondaryPowerBarTicks(bar, resource, max)
     local cfg = NephUI.db.profile.secondaryPowerBar
-    
+
     -- Hide all ticks first
     for _, tick in ipairs(bar.ticks) do
         tick:Hide()
@@ -423,6 +412,9 @@ function ResourceBars:UpdateSecondaryPowerBarTicks(bar, resource, max)
     if resource == Enum.PowerType.SoulShards then
         displayMax = UnitPowerMax("player", resource) -- non-fractional max (usually 5)
     end
+    if not displayMax or displayMax <= 0 then
+        return
+    end
 
     local needed = displayMax - 1
     for i = 1, needed do
@@ -432,7 +424,7 @@ function ResourceBars:UpdateSecondaryPowerBarTicks(bar, resource, max)
             tick:SetColorTexture(0, 0, 0, 1)
             bar.ticks[i] = tick
         end
-        
+
         local x = (i / displayMax) * width
         tick:ClearAllPoints()
         -- x is already in pixels (calculated from bar width), no need to scale
@@ -450,6 +442,29 @@ function ResourceBars:UpdateSecondaryPowerBar()
     if not cfg.enabled then
         if NephUI.secondaryPowerBar then NephUI.secondaryPowerBar:Hide() end
         return
+    end
+
+    -- Track stagger percentage for dynamic color changes
+    local bar = self:GetSecondaryPowerBar()
+    local resource = GetSecondaryResource()
+    if resource == "STAGGER" then
+        local stagger = UnitStagger("player") or 0
+        local maxHealth = UnitHealthMax("player") or 1
+        local staggerPercent = (stagger / maxHealth) * 100
+
+        -- Initialize tracking variable if it doesn't exist
+        bar._lastStaggerPercent = bar._lastStaggerPercent or staggerPercent
+
+        -- Check if we crossed a threshold and need to update colors
+        if (staggerPercent >= 30 and bar._lastStaggerPercent < 30)
+            or (staggerPercent < 30 and bar._lastStaggerPercent >= 30)
+            or (staggerPercent >= 60 and bar._lastStaggerPercent < 60)
+            or (staggerPercent < 60 and bar._lastStaggerPercent >= 60) then
+            -- Force color update by clearing cached color
+            bar._lastColorResource = nil
+        end
+
+        bar._lastStaggerPercent = staggerPercent
     end
 
     local anchor = _G[cfg.attachTo]
@@ -549,7 +564,7 @@ function ResourceBars:UpdateSecondaryPowerBar()
     end
 
     -- Get resource values
-    local max, current, displayValue, valueType = GetSecondaryResourceValue(resource, cfg)
+    local max, maxDisplayValue, current, displayValue, valueType = GetSecondaryResourceValue(resource, cfg)
     if not max then
         bar:Hide()
         return
@@ -565,7 +580,7 @@ function ResourceBars:UpdateSecondaryPowerBar()
 
         local powerTypeColors = NephUI.db.profile.powerTypeColors
         if powerTypeColors.useClassColor then
-            -- Class color
+            -- Class color for all resources
             local _, class = UnitClass("player")
             local classColor = RAID_CLASS_COLORS[class]
             if classColor then
@@ -594,7 +609,7 @@ function ResourceBars:UpdateSecondaryPowerBar()
         -- Set bar color
         local powerTypeColors = NephUI.db.profile.powerTypeColors
         if powerTypeColors.useClassColor then
-            -- Class color
+            -- Class color for all resources
             local _, class = UnitClass("player")
             local classColor = RAID_CLASS_COLORS[class]
             if classColor then
@@ -603,22 +618,35 @@ function ResourceBars:UpdateSecondaryPowerBar()
                 local color = GetResourceColor(resource)
                 bar.StatusBar:SetStatusBarColor(color.r, color.g, color.b)
             end
-        elseif powerTypeColors.colors[resource] then
-            -- Power type specific color
+        elseif powerTypeColors.colors[resource] and resource ~= "STAGGER" then
+            -- Power type specific color (skip for stagger as it uses dynamic colors)
             local color = powerTypeColors.colors[resource]
             bar.StatusBar:SetStatusBarColor(color[1], color[2], color[3], color[4] or 1)
         else
-            -- Default resource color
+            -- Default resource color (includes dynamic stagger colors)
             local color = GetResourceColor(resource)
             bar.StatusBar:SetStatusBarColor(color.r, color.g, color.b)
         end
 
-        if valueType == "percent" then
-            bar.TextValue:SetFormattedText("%.0f%%", displayValue or 0)
-        elseif valueType == "decimal" then
-            bar.TextValue:SetFormattedText("%.1f", displayValue or 0)
-        else
-            bar.TextValue:SetText(tostring(displayValue or 0))
+        if cfg.textFormat == "Percent" or cfg.textFormat == "Percent%" then
+            local precision = cfg.textPrecision and math.max(0, string.len(cfg.textPrecision) - 3) or 0
+            if valueType == "custom" then
+                bar.TextValue:SetText(displayValue)
+            else
+                bar.TextValue:SetText(string.format("%." .. (precision or 0) .. "f" .. (cfg.textFormat == "Percent%" and "%%" or ""), displayValue))
+            end
+        elseif cfg.textFormat == "Current / Maximum" then
+            if valueType == "custom" then
+                bar.TextValue:SetText(displayValue .. ' / ' .. (maxDisplayValue or max))
+            else
+                bar.TextValue:SetText(AbbreviateNumbers(displayValue) .. ' / ' .. AbbreviateNumbers(maxDisplayValue or max))
+            end
+        else -- Default "Current" format
+            if valueType == "custom" then
+                bar.TextValue:SetText(displayValue)
+            else
+                bar.TextValue:SetText(AbbreviateNumbers(displayValue))
+            end
         end
         
         -- Hide fragmented bars
@@ -632,10 +660,6 @@ function ResourceBars:UpdateSecondaryPowerBar()
     bar.TextValue:ClearAllPoints()
     bar.TextValue:SetPoint("CENTER", bar.TextFrame, "CENTER", NephUI:Scale(cfg.textX or 0), NephUI:Scale(cfg.textY or 0))
 
-    if bar.SoulShardDecimal then
-        bar.SoulShardDecimal:SetFont(NephUI:GetGlobalFont(), cfg.textSize or 12, "OUTLINE")
-        bar.SoulShardDecimal:SetShadowOffset(0, 0)
-    end
 
     -- Show text
     bar.TextFrame:SetShown(cfg.showText ~= false)
@@ -688,25 +712,6 @@ function ResourceBars:UpdateSecondaryPowerBar()
     -- Update charged power overlays (e.g., Charged Combo Points)
     self:UpdateChargedPowerSegments(bar, resource, max)
 
-    -- Handle fake decimal
-    if bar.SoulShardDecimal then
-        local _, class = UnitClass("player")
-        local spec = GetSpecialization()
-
-        -- When showing decimal shards directly, hide the extra dot overlay
-        if valueType == "decimal" then
-            bar.SoulShardDecimal:Hide()
-        elseif resource == Enum.PowerType.SoulShards
-            and class == "WARLOCK"
-            and spec == 3
-        then
-            bar.SoulShardDecimal:ClearAllPoints()
-            bar.SoulShardDecimal:SetPoint("CENTER", bar.TextValue, "CENTER", 0, 0)
-            bar.SoulShardDecimal:Show()
-        else
-            bar.SoulShardDecimal:Hide()
-        end
-    end
 
     bar:Show()
 end

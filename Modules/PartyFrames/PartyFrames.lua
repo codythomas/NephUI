@@ -24,18 +24,20 @@ local HIGHLIGHT_REPLACEMENTS = {
 }
 
 -- Safely fetch health percent across API variants (12.0 curve vs legacy boolean)
-local function SafeUnitHealthPercent(unit, usePredicted)
+local function SafeUnitHealthPercent(unit, includeAbsorbs, includePredicted)
+    -- Prefer native helper to avoid secret-value comparison issues.
     if type(UnitHealthPercent) == "function" then
         local ok, pct
 
+        -- Try modern signature with curve constants first
         if CurveConstants and CurveConstants.ScaleTo100 then
-            ok, pct = pcall(UnitHealthPercent, unit, usePredicted, CurveConstants.ScaleTo100)
+            ok, pct = pcall(UnitHealthPercent, unit, includePredicted, CurveConstants.ScaleTo100)
         else
-            ok, pct = pcall(UnitHealthPercent, unit, usePredicted, true)
+            ok, pct = pcall(UnitHealthPercent, unit, includePredicted, true)
         end
 
         if (not ok or pct == nil) then
-            ok, pct = pcall(UnitHealthPercent, unit, usePredicted)
+            ok, pct = pcall(UnitHealthPercent, unit, includePredicted)
         end
 
         if ok and pct ~= nil then
@@ -43,11 +45,42 @@ local function SafeUnitHealthPercent(unit, usePredicted)
         end
     end
 
+    -- Fallback: calculate from missing health (handles absorbs on modern clients).
+    if type(UnitHealthMissing) == "function" then
+        local ok, pct = pcall(function()
+            local missing = UnitHealthMissing(unit, includeAbsorbs)
+            if type(missing) ~= "number" then
+                return nil
+            end
+            local max = UnitHealthMax(unit)
+            if not max or max <= 0 then
+                return nil
+            end
+            local cur = max - missing
+            local value = (cur / max) * 100
+            return math.min(100, math.max(0, value))
+        end)
+        if ok and pct ~= nil then
+            return pct
+        end
+    end
+
+    -- Final fallback: compute from current/max.
     if UnitHealth and UnitHealthMax then
-        local cur = UnitHealth(unit)
-        local max = UnitHealthMax(unit)
-        if cur and max and max > 0 then
-            return (cur / max) * 100
+        local ok, pct = pcall(function()
+            local cur = UnitHealth(unit)
+            local max = UnitHealthMax(unit)
+            if includeAbsorbs and UnitGetTotalAbsorbs then
+                cur = (cur or 0) + (UnitGetTotalAbsorbs(unit) or 0)
+            end
+            if not cur or not max or max <= 0 then
+                return nil
+            end
+            local value = (cur / max) * 100
+            return math.min(100, math.max(0, value))
+        end)
+        if ok and pct ~= nil then
+            return pct
         end
     end
 
@@ -67,7 +100,7 @@ local function SafeGetNumber(frame, method)
     if type(func) ~= "function" then return nil end
     local ok, value = pcall(func, frame)
     if ok and type(value) == "number" then
-        return value + 0 -- force a plain Lua number to avoid secret values
+        return value -- secret values are still valid numbers
     end
     return nil
 end
@@ -305,6 +338,36 @@ local function AcquireHighlightTexture(frame, key, suffix)
         return _G[name .. suffix]
     end
     return nil
+end
+
+local function AcquireDebuffHighlightTexture(frame)
+    if not frame then return nil end
+    if frame.__nuiDebuffHighlight then
+        return frame.__nuiDebuffHighlight
+    end
+    local highlight = frame.debuffHighlight or frame.DebuffHighlight or frame.debuffHighlightTexture
+    if not highlight then
+        local name = SafeGetName(frame)
+        if name then
+            highlight = _G[name .. "DebuffHighlight"]
+                or _G[name .. "DebuffHighlightTexture"]
+                or _G[name .. "DispelHighlight"]
+        end
+    end
+    if not highlight and frame.GetRegions then
+        for i = 1, frame:GetNumRegions() do
+            local region = select(i, frame:GetRegions())
+            if region and region.GetObjectType and region:GetObjectType() == "Texture" then
+                local regionName = region.GetName and region:GetName()
+                if regionName and (regionName:find("DebuffHighlight") or regionName:find("DispelHighlight")) then
+                    highlight = region
+                    break
+                end
+            end
+        end
+    end
+    frame.__nuiDebuffHighlight = highlight
+    return highlight
 end
 
 local BACKGROUND_TEXTURE = "Interface\\Buttons\\WHITE8x8"
@@ -658,7 +721,17 @@ function Engine:ApplyBackground(frame, cfg)
         a = color[4] or 1
     end
 
-    ApplyBackgroundColor(background, r, g, b, a)
+    -- If we have a background health bar (missing health visualization), apply color to it instead of Blizzard background
+    if frame.healthBarBG then
+        if type(r) == "number" and type(g) == "number" and type(b) == "number" then
+            frame.healthBarBG:SetStatusBarColor(r, g, b, a)
+        end
+        -- Make Blizzard background transparent
+        ApplyBackgroundColor(background, 0, 0, 0, 0)
+    else
+        -- Normal behavior: apply to Blizzard background
+        ApplyBackgroundColor(background, r, g, b, a)
+    end
 end
 
 function Engine:ApplyLayout(frame, cfg)
@@ -792,12 +865,61 @@ local function GetGradientCurve(cfg)
     return curve
 end
 
+function Engine:UpdateHealthBarBG(frame, unit)
+    if not frame or not frame.healthBarBG or not unit then return end
+
+    local maxHealth = UnitHealthMax(unit)
+    if not maxHealth or maxHealth == 0 then return end
+
+    -- Calculate missing health using UnitHealthMissing API if available
+    local missingHealth = 0
+    if type(UnitHealthMissing) == "function" then
+        local ok, missing = pcall(UnitHealthMissing, unit, true) -- Include absorbs
+        if ok and missing and type(missing) == "number" then
+            missingHealth = missing
+        end
+    else
+        -- Fallback: calculate manually
+        local currentHealth = UnitHealth(unit) or 0
+        local absorbs = UnitGetTotalAbsorbs and UnitGetTotalAbsorbs(unit) or 0
+        missingHealth = maxHealth - currentHealth - absorbs
+        missingHealth = math.max(0, missingHealth)
+    end
+
+    -- Update background bar (shows missing health)
+    frame.healthBarBG:SetMinMaxValues(0, maxHealth)
+    frame.healthBarBG:SetValue(missingHealth)
+end
+
 function Engine:ApplyHealth(frame, cfg)
     if not frame or not frame.healthBar or not cfg or cfg.enabled == false then return end
     local healthCfg = cfg.health
     if not healthCfg then return end
+
+    -- Create background health bar for missing health visualization
+    if not frame.healthBarBG then
+        frame.healthBarBG = CreateFrame("StatusBar", nil, frame)
+        frame.healthBarBG:SetAllPoints(frame.healthBar)
+        frame.healthBarBG:SetReverseFill(true) -- Fill from right to left to show missing health
+
+        -- Hook into health updates to keep background bar in sync
+        frame:HookScript("OnEvent", function(self, event, ...)
+            if event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
+                local unit = GetUnitToken(self)
+                if unit then
+                    Engine:UpdateHealthBarBG(self, unit)
+                end
+            end
+        end)
+    end
+
     frame.healthBar:SetStatusBarTexture(ResolveTexture(healthCfg.texture))
     frame.healthBar:SetOrientation((healthCfg.orientation or "HORIZONTAL"):upper())
+
+    -- Background bar uses global background texture for missing health visualization (consistent with unit frames)
+    frame.healthBarBG:SetStatusBarTexture(NephUI:GetTexture() or "Interface\\TargetingFrame\\UI-StatusBar")
+    frame.healthBarBG:SetOrientation((healthCfg.orientation or "HORIZONTAL"):upper())
+
     local unit = GetUnitToken(frame)
     local r, g, b, a = 0, 1, 0, 1
     if healthCfg.useClassColor and unit then
@@ -811,6 +933,13 @@ function Engine:ApplyHealth(frame, cfg)
     if type(r) == "number" and type(g) == "number" and type(b) == "number" then
         frame.healthBar:SetStatusBarColor(r, g, b, a or 1)
     end
+
+    -- Background bar color is now handled by ApplyBackground function
+
+    -- Initial update of background bar
+    if unit then
+        Engine:UpdateHealthBarBG(frame, unit)
+    end
 end
 
 function Engine:FormatHealth(frame, cfg)
@@ -822,7 +951,7 @@ function Engine:FormatHealth(frame, cfg)
 
     local ok, result = pcall(function()
         if fmt == "PERCENT" then
-            local percent = SafeUnitHealthPercent(unit, true) or SafeUnitHealthPercent(unit)
+            local percent = SafeUnitHealthPercent(unit, false, true) or SafeUnitHealthPercent(unit, false, false)
             if percent then
                 return string.format("%.0f%%", percent)
             end
@@ -1578,6 +1707,13 @@ function Engine:ApplyAggroHighlightSkin(frame, cfg)
     local highlight = AcquireHighlightTexture(frame, "aggroHighlight", "AggroHighlight")
     if not highlight then return end
     ApplyBlizzardHighlightTexture(highlight, settings, HIGHLIGHT_REPLACEMENTS.aggro)
+    local overlay = self:EnsureOverlay(frame)
+    if highlight.SetParent and highlight:GetParent() ~= overlay then
+        highlight:SetParent(overlay)
+    end
+    if highlight.SetDrawLayer then
+        highlight:SetDrawLayer("OVERLAY", 7)
+    end
 end
 
 function Engine:ApplyMouseoverHighlight(frame, cfg)
@@ -1625,8 +1761,12 @@ function Engine:UpdateHighlights(frame, cfg)
     local aggro = cfg.highlights.aggro
     if aggro and aggro.mode ~= "BLIZZARD" then
         if not frame.NephUIAggroHighlight then
-            frame.NephUIAggroHighlight = frame:CreateTexture(nil, "OVERLAY")
+            local overlay = self:EnsureOverlay(frame)
+            frame.NephUIAggroHighlight = overlay:CreateTexture(nil, "OVERLAY")
             frame.NephUIAggroHighlight:SetAllPoints(frame)
+        end
+        if frame.NephUIAggroHighlight.SetDrawLayer then
+            frame.NephUIAggroHighlight:SetDrawLayer("OVERLAY", 7)
         end
         local unit = GetUnitToken(frame)
         local status = unit and UnitThreatSituation("player", unit)
@@ -1706,10 +1846,17 @@ function Engine:UpdateAbsorbGlow(frame, cfg)
 
     -- Method 4: Search children recursively for absorb-related frames/textures
     local function SearchFrameForGlows(parentFrame)
+        if not parentFrame or not parentFrame.GetNumChildren then return end
         for i = 1, parentFrame:GetNumChildren() do
             local child = select(i, parentFrame:GetChildren())
             if child then
-                local childName = child:GetName()
+                local childName
+                if child.GetName then
+                    local ok, result = pcall(child.GetName, child)
+                    if ok then
+                        childName = result
+                    end
+                end
                 if childName and (childName:find("OverAbsorb") or childName:find("overabsorb") or childName:find("AbsorbGlow") or childName:find("absorbglow") or childName:find("Glow")) then
                     table.insert(glowFrames, child)
                 elseif child.GetTexture then
@@ -1754,8 +1901,8 @@ function Engine:StyleFrame(frame)
     end
     self:EnsureMouseoverHandlers(frame)
     self:ApplyLayout(frame, cfg)
+    self:ApplyHealth(frame, cfg)  -- Must come before ApplyBackground for missing health BG check
     self:ApplyBackground(frame, cfg)
-    self:ApplyHealth(frame, cfg)
     self:ApplyTexts(frame, cfg)
     self:ApplyIcons(frame, cfg)
     self:StyleAuras(frame, cfg)
@@ -1808,7 +1955,10 @@ function Engine:Initialize()
         Engine:StyleSpecialAuraIcons(frame)
     end)
     hooksecurefunc("CompactUnitFrame_UpdateName", function(frame) Engine:ApplyTexts(frame, Engine:GetConfig(DetermineMode(frame))) end)
-    hooksecurefunc("CompactUnitFrame_UpdateHealth", function(frame) Engine:ApplyHealth(frame, Engine:GetConfig(DetermineMode(frame))) end)
+    hooksecurefunc("CompactUnitFrame_UpdateHealth", function(frame)
+        Engine:ApplyHealth(frame, Engine:GetConfig(DetermineMode(frame)))
+        Engine:ApplyTexts(frame, Engine:GetConfig(DetermineMode(frame)))  -- Update health text when health changes
+    end)
     hooksecurefunc("CompactUnitFrame_UpdateHealPrediction", function(frame)
         Engine:UpdateAbsorbs(frame, Engine:GetConfig(DetermineMode(frame)))
         Engine:UpdateAbsorbGlow(frame, Engine:GetConfig(DetermineMode(frame)))
@@ -1839,6 +1989,16 @@ function Engine:Initialize()
         local cfg = Engine:GetConfig(mode)
         Engine:ApplyAggroHighlightSkin(frame, cfg)
     end)
+    if CompactUnitFrame_UpdateDebuffHighlight then
+        hooksecurefunc("CompactUnitFrame_UpdateDebuffHighlight", function(frame)
+            Engine:ApplyDebuffHighlightLayer(frame)
+        end)
+    end
+    if CompactUnitFrame_UpdateDispelHighlight then
+        hooksecurefunc("CompactUnitFrame_UpdateDispelHighlight", function(frame)
+            Engine:ApplyDebuffHighlightLayer(frame)
+        end)
+    end
 end
 
 function PartyFrames:ApplySoloVisibility()

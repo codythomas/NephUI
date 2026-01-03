@@ -394,6 +394,78 @@ function Chat:SkinChatFrame(chatFrame)
                 originalSetAlpha(self, 1.0)
             end
         end
+
+        -- Keep only the primary chat edit box visible to avoid duplicates
+        local primaryEditBox = _G.ChatFrameEditBox or _G.ChatFrame1EditBox
+        if editBox == primaryEditBox and not editBox.__nephuiShowHooked then
+            editBox.__nephuiShowHooked = true
+            editBox:Show()
+
+            if editBox.HookScript then
+                editBox:HookScript("OnHide", function(self)
+                    self:Show()
+                end)
+            end
+
+            local originalHide = editBox.Hide
+            editBox.Hide = function(self)
+                originalHide(self)
+                self:Show()
+            end
+        end
+
+        if editBox == primaryEditBox and not editBox.__nephuiContentHooked then
+            editBox.__nephuiContentHooked = true
+
+            local function SetEditBoxContentVisible(self, visible)
+                if not self.__nephuiTextColor then
+                    local r, g, b, a = self:GetTextColor()
+                    self.__nephuiTextColor = { r or 1, g or 1, b or 1, a or 1 }
+                end
+
+                local r, g, b, a = unpack(self.__nephuiTextColor)
+                self:SetTextColor(r, g, b, visible and a or 0)
+
+                local promptFrames = {
+                    "Prompt", "Header", "HeaderSuffix", "LanguageHeader", "NewcomerHint",
+                    "prompt", "header", "headerSuffix", "languageHeader", "newcomerHint",
+                }
+                for _, frameName in ipairs(promptFrames) do
+                    local frame = self[frameName]
+                    if frame and frame.SetAlpha then
+                        frame:SetAlpha(visible and 1 or 0)
+                    end
+                end
+
+                local focusFrames = {
+                    "FocusLeft", "FocusMid", "FocusRight",
+                    "focusLeft", "focusMid", "focusRight",
+                }
+                for _, frameName in ipairs(focusFrames) do
+                    local frame = self[frameName]
+                    if frame and frame.SetAlpha then
+                        frame:SetAlpha(visible and 1 or 0)
+                    end
+                end
+            end
+
+            SetEditBoxContentVisible(editBox, editBox:HasFocus())
+
+            if editBox.HookScript then
+                editBox:HookScript("OnEditFocusGained", function(self)
+                    SetEditBoxContentVisible(self, true)
+                end)
+
+                editBox:HookScript("OnEditFocusLost", function(self)
+                    SetEditBoxContentVisible(self, false)
+                end)
+
+                editBox:HookScript("OnShow", function(self)
+                    SetEditBoxContentVisible(self, self:HasFocus())
+                end)
+            end
+
+        end
     end
     
     -- Style all font strings in the chat frame

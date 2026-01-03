@@ -321,9 +321,9 @@ local function CreateTypeOptions(typeKey, displayName, order)
                 values = GetAnchorPointOptions(),
                 get = function()
                     local db = NephUI.db.profile.buffDebuffFrames
-                    if not db or not db[typeKey] then return "BOTTOM" end
+                    if not db or not db[typeKey] then return "CENTER" end
                     local textConfig = db[typeKey].duration or {}
-                    return textConfig.anchorPoint or "BOTTOM"
+                    return textConfig.anchorPoint or "CENTER"
                 end,
                 set = function(_, val)
                     local db = NephUI.db.profile.buffDebuffFrames
@@ -373,9 +373,9 @@ local function CreateTypeOptions(typeKey, displayName, order)
                 step = 1,
                 get = function()
                     local db = NephUI.db.profile.buffDebuffFrames
-                    if not db or not db[typeKey] then return -2 end
+                    if not db or not db[typeKey] then return 0 end
                     local textConfig = db[typeKey].duration or {}
-                    return textConfig.offsetY or -2
+                    return textConfig.offsetY or 0
                 end,
                 set = function(_, val)
                     local db = NephUI.db.profile.buffDebuffFrames

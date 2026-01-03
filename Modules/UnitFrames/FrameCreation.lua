@@ -50,26 +50,30 @@ function UF:CreateUnitFrame(unit)
     end
     
     unitFrame:SetBackdrop({
-        bgFile = self.Media.BackgroundTexture,
         edgeFile = "Interface\\Buttons\\WHITE8X8",
         edgeSize = 1
     })
-    unitFrame:SetBackdropColor(unpack(DB.Frame.BGColor))
+    unitFrame:SetBackdropColor(0, 0, 0, 0) -- Transparent background
     unitFrame:SetBackdropBorderColor(0, 0, 0, 1)
     
+    -- Create background health bar for missing health visualization
+    unitFrame.healthBarBG = CreateFrame("StatusBar", nil, unitFrame)
+    unitFrame.healthBarBG:SetStatusBarTexture(self.Media.BackgroundTexture)
+    unitFrame.healthBarBG:SetReverseFill(true) -- Fill from right to left to show missing health
+
+    -- Create foreground health bar for current health
     unitFrame.healthBar = CreateFrame("StatusBar", nil, unitFrame)
     unitFrame.healthBar:SetPoint("TOPLEFT", unitFrame, "TOPLEFT", 1, -1)
     unitFrame.healthBar:SetPoint("BOTTOMRIGHT", unitFrame, "BOTTOMRIGHT", -1, 1)
     unitFrame.healthBar:SetStatusBarTexture(self.Media.ForegroundTexture)
-    
-    if not unitFrame.healthBar.BG then
-        unitFrame.healthBar.BG = unitFrame.healthBar:CreateTexture(nil, "BACKGROUND")
-        unitFrame.healthBar.BG:SetAllPoints()
-        unitFrame.healthBar.BG:SetTexture(self.Media.BackgroundTexture)
-    end
-    
+
+    -- Keep missing-health bar aligned to the health bar so it never overlaps the power bar
+    unitFrame.healthBarBG:ClearAllPoints()
+    unitFrame.healthBarBG:SetAllPoints(unitFrame.healthBar)
+
+    -- Set background health bar color (missing health)
     local bgR, bgG, bgB, bgA = unpack(DB.Frame.BGColor)
-    unitFrame.healthBar.BG:SetVertexColor(bgR, bgG, bgB, bgA)
+    unitFrame.healthBarBG:SetStatusBarColor(bgR, bgG, bgB, bgA)
     
     -- Ensure media is resolved (in case it wasn't called yet)
     if not self.Media or not self.Media.Font then
@@ -260,8 +264,8 @@ function UF:CreateUnitFrame(unit)
         unitFrame:RegisterEvent("UNIT_MAXPOWER")
     end
     
-    -- Register UNIT_AURA for target frame to update auras
-    if unit == "target" then
+    -- Register UNIT_AURA for target and boss frames to update auras
+    if unit == "target" or unit:match("^boss%d+$") then
         unitFrame:RegisterEvent("UNIT_AURA")
     end
     
@@ -337,8 +341,8 @@ function UF:CreateUnitFrame(unit)
         UF.UpdateUnitFrameEventHandler(unitFrame)
     end
     
-    -- Update unit auras if this is a player, focus, or target frame
-    if (unit == "player" or unit == "focus" or unit == "target") and UpdateUnitAuras then
+    -- Update unit auras if this is a player, focus, target, or boss frame
+    if (unit == "player" or unit == "focus" or unit == "target" or unit:match("^boss%d+$")) and UpdateUnitAuras then
         UpdateUnitAuras(unitFrame)
     end
 end

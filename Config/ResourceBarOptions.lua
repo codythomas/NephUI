@@ -975,22 +975,60 @@ local function CreateResourceBarOptions()
                             NephUI:UpdateSecondaryPowerBar()
                         end,
                     },
-                    staggerColor = {
+                    staggerLightColor = {
                         type = "color",
-                        name = "Stagger",
-                        desc = "Color for stagger bars (dynamic coloring in-game)",
+                        name = "Light Stagger",
+                        desc = "Color for stagger bars when stagger is less than 30% of max health",
                         order = 26,
                         width = "normal",
                         hasAlpha = true,
                         get = function()
-                            local c = NephUI.db.profile.powerTypeColors.colors["STAGGER"]
+                            local c = NephUI.db.profile.powerTypeColors.colors["STAGGER_LIGHT"]
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 0.52, 1.00, 0.52, 1.0
+                        end,
+                        set = function(_, r, g, b, a)
+                            NephUI.db.profile.powerTypeColors.colors["STAGGER_LIGHT"] = { r, g, b, a }
+                            NephUI:UpdateSecondaryPowerBar()
+                        end,
+                    },
+                    staggerMediumColor = {
+                        type = "color",
+                        name = "Medium Stagger",
+                        desc = "Color for stagger bars when stagger is 30-59% of max health",
+                        order = 26.1,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.powerTypeColors.colors["STAGGER_MEDIUM"]
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 1.00, 0.98, 0.72, 1.0
+                        end,
+                        set = function(_, r, g, b, a)
+                            NephUI.db.profile.powerTypeColors.colors["STAGGER_MEDIUM"] = { r, g, b, a }
+                            NephUI:UpdateSecondaryPowerBar()
+                        end,
+                    },
+                    staggerHeavyColor = {
+                        type = "color",
+                        name = "Heavy Stagger",
+                        desc = "Color for stagger bars when stagger is 60% or more of max health",
+                        order = 26.2,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.powerTypeColors.colors["STAGGER_HEAVY"]
                             if c then
                                 return c[1], c[2], c[3], c[4] or 1
                             end
                             return 1.00, 0.42, 0.42, 1.0
                         end,
                         set = function(_, r, g, b, a)
-                            NephUI.db.profile.powerTypeColors.colors["STAGGER"] = { r, g, b, a }
+                            NephUI.db.profile.powerTypeColors.colors["STAGGER_HEAVY"] = { r, g, b, a }
                             NephUI:UpdateSecondaryPowerBar()
                         end,
                     },

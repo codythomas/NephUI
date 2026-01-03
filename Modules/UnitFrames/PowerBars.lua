@@ -12,10 +12,56 @@ local GetPowerBarDB = UF.GetPowerBarDB
 local FetchPowerBarColor = UF.FetchPowerBarColor
 local PowerBarColor = UF.PowerBarColor
 
+local function GetUnitDB(unit)
+    local db = NephUI.db and NephUI.db.profile and NephUI.db.profile.unitFrames
+    if not db or not unit then return nil end
+    local dbUnit = unit
+    if unit:match("^boss(%d+)$") then dbUnit = "boss" end
+    return db[dbUnit]
+end
+
+local function AlternatePowerBarShown(unitFrame, unit, DB)
+    if unit ~= "player" then return false end
+    if not unitFrame then return false end
+    local altPowerBar = unitFrame.alternatePowerBar
+    if not altPowerBar or not altPowerBar:IsShown() then return false end
+    return DB and DB.AlternatePowerBar and DB.AlternatePowerBar.Enabled
+end
+
+local function UpdateHealthBarForPower(unitFrame, unit, DB)
+    if not unitFrame or not unitFrame.healthBar then return end
+    if AlternatePowerBarShown(unitFrame, unit, DB) then return end
+    local powerBar = unitFrame.powerBar
+    local hasPowerBar = powerBar and powerBar:IsShown()
+
+    unitFrame.healthBar:ClearAllPoints()
+    unitFrame.healthBar:SetPoint("TOPLEFT", unitFrame, "TOPLEFT", 1, -1)
+    if hasPowerBar then
+        unitFrame.healthBar:SetPoint("BOTTOMLEFT", powerBar, "TOPLEFT", 0, 0)
+        unitFrame.healthBar:SetPoint("BOTTOMRIGHT", powerBar, "TOPRIGHT", 0, 0)
+    else
+        unitFrame.healthBar:SetPoint("BOTTOMRIGHT", unitFrame, "BOTTOMRIGHT", -1, 1)
+    end
+end
+
+UF.UpdateHealthBarForPower = UpdateHealthBarForPower
+
 -- Update power bar event handler
 local function UpdateUnitFramePowerBar(self, event, eventUnit, ...)
     local unit = self.unit
     if not unit then return end
+
+    local DB = GetUnitDB(unit)
+    local PowerBarDB = DB and GetPowerBarDB(DB)
+    if not PowerBarDB or not PowerBarDB.Enabled then
+        self:Hide()
+        if self.border then
+            self.border:Hide()
+        end
+        local unitFrame = self:GetParent()
+        UpdateHealthBarForPower(unitFrame, unit, DB)
+        return
+    end
     
     -- Handle target change events - always update for these (unit might be new target)
     local isTargetChangeEvent = (event == "PLAYER_TARGET_CHANGED" and unit == "target") or 
@@ -79,18 +125,14 @@ local function UpdateUnitFramePowerBar(self, event, eventUnit, ...)
     end
 
     if maxPowerIsZero then
-        -- Still show the bar but with 0 values
-        self:SetMinMaxValues(0, 1)
-        self:SetValue(0)
-        -- Get color even when power is 0
-        if isTargetOrFocus then
-            local col = PowerBarColor[pType] or { r = 0.8, g = 0.8, b = 0.8 }
-            self:SetStatusBarColor(col.r, col.g, col.b)
-        else
-            local r, g, b, a = FetchPowerBarColor(unit)
-            self:SetStatusBarColor(r, g, b, a)
+        -- No power type; hide the power bar and let health fill the space.
+        self:Hide()
+        if self.border then
+            self.border:Hide()
         end
-        self:Show()
+        local unitFrame = self:GetParent()
+        local DB = GetUnitDB(unit)
+        UpdateHealthBarForPower(unitFrame, unit, DB)
         return
     end
     
@@ -140,6 +182,22 @@ function UF:CreatePowerBar(unitFrame, unit, DB, PowerBarDB)
     
     local unitFramePowerBar = CreateFrame("StatusBar", nil, unitFrame)
     unitFrame.powerBar = unitFramePowerBar
+
+    if not unitFramePowerBar.__nephuiHealthAnchorHooks then
+        unitFramePowerBar.__nephuiHealthAnchorHooks = true
+        unitFramePowerBar:HookScript("OnShow", function(bar)
+            local parentFrame = bar:GetParent()
+            local barUnit = bar.unit or (parentFrame and parentFrame.unit)
+            local barDB = GetUnitDB(barUnit)
+            UpdateHealthBarForPower(parentFrame, barUnit, barDB)
+        end)
+        unitFramePowerBar:HookScript("OnHide", function(bar)
+            local parentFrame = bar:GetParent()
+            local barUnit = bar.unit or (parentFrame and parentFrame.unit)
+            local barDB = GetUnitDB(barUnit)
+            UpdateHealthBarForPower(parentFrame, barUnit, barDB)
+        end)
+    end
     
     if PowerBarDB.Enabled then
         local barHeight = PowerBarDB.Height
@@ -186,44 +244,13 @@ function UF:CreatePowerBar(unitFrame, unit, DB, PowerBarDB)
         -- Ensure color is applied after showing (sometimes needed for initial load)
         unitFramePowerBar.bg:SetVertexColor(r, g, b, a)
         
-        -- Check if alternate power bar is shown (for player unit)
-        -- Alternate power bar takes precedence for health bar positioning
-        local alternatePowerBarShown = false
-        if unit == "player" then
-            local altPowerBar = unitFrame.alternatePowerBar
-            if altPowerBar and altPowerBar:IsShown() and DB.AlternatePowerBar and DB.AlternatePowerBar.Enabled then
-                alternatePowerBarShown = true
-            end
-        end
-        
-        -- Only adjust health bar position if alternate power bar is not shown
-        if not alternatePowerBarShown then
-            unitFrame.healthBar:ClearAllPoints()
-            unitFrame.healthBar:SetPoint("TOPLEFT", unitFrame, "TOPLEFT", 1, -1)
-            unitFrame.healthBar:SetPoint("BOTTOMLEFT", unitFramePowerBar, "TOPLEFT", 0, 0)
-            unitFrame.healthBar:SetPoint("BOTTOMRIGHT", unitFramePowerBar, "TOPRIGHT", 0, 0)
-        end
+        UpdateHealthBarForPower(unitFrame, unit, DB)
     else
         unitFramePowerBar:Hide()
         if unitFramePowerBar.border then
             unitFramePowerBar.border:Hide()
         end
-        
-        -- Check if alternate power bar is shown (for player unit)
-        local alternatePowerBarShown = false
-        if unit == "player" then
-            local altPowerBar = unitFrame.alternatePowerBar
-            if altPowerBar and altPowerBar:IsShown() and DB.AlternatePowerBar and DB.AlternatePowerBar.Enabled then
-                alternatePowerBarShown = true
-            end
-        end
-        
-        -- Only adjust health bar position if alternate power bar is not shown
-        if not alternatePowerBarShown then
-            unitFrame.healthBar:ClearAllPoints()
-            unitFrame.healthBar:SetPoint("TOPLEFT", unitFrame, "TOPLEFT", 1, -1)
-            unitFrame.healthBar:SetPoint("BOTTOMRIGHT", unitFrame, "BOTTOMRIGHT", -1, 1)
-        end
+        UpdateHealthBarForPower(unitFrame, unit, DB)
     end
     
     unitFramePowerBar.unit = unit
@@ -250,13 +277,7 @@ function UF:UpdatePowerBar(unitFrame, unit, DB, PowerBarDB)
     
     -- Check if alternate power bar is shown (for player unit)
     -- Alternate power bar takes precedence, so hide regular power bar if alternate is shown
-    local alternatePowerBarShown = false
-    if unit == "player" then
-        local altPowerBar = unitFrame.alternatePowerBar
-        if altPowerBar and altPowerBar:IsShown() and DB.AlternatePowerBar and DB.AlternatePowerBar.Enabled then
-            alternatePowerBarShown = true
-        end
-    end
+    local alternatePowerBarShown = AlternatePowerBarShown(unitFrame, unit, DB)
     
     if PowerBarDB.Enabled and not alternatePowerBarShown then
         local unitPowerBarHeight = PowerBarDB.Height
@@ -300,14 +321,7 @@ function UF:UpdatePowerBar(unitFrame, unit, DB, PowerBarDB)
         
         unitPowerBar:Show()
         
-        -- Only adjust health bar position if alternate power bar is not shown
-        -- (Alternate power bar handles health bar positioning when it's shown)
-        if not alternatePowerBarShown then
-            unitFrame.healthBar:ClearAllPoints()
-            unitFrame.healthBar:SetPoint("TOPLEFT", unitFrame, "TOPLEFT", 1, -1)
-            unitFrame.healthBar:SetPoint("BOTTOMLEFT", unitPowerBar, "TOPLEFT", 0, 0)
-            unitFrame.healthBar:SetPoint("BOTTOMRIGHT", unitPowerBar, "TOPRIGHT", 0, 0)
-        end
+        UpdateHealthBarForPower(unitFrame, unit, DB)
         
         -- Force update power bar values when unit frame updates (e.g., target change)
         UpdateUnitFramePowerBar(unitPowerBar)
@@ -316,13 +330,7 @@ function UF:UpdatePowerBar(unitFrame, unit, DB, PowerBarDB)
         if unitPowerBar.border then
             unitPowerBar.border:Hide()
         end
-        
-        -- Only adjust health bar position if alternate power bar is not shown
-        if not alternatePowerBarShown then
-            unitFrame.healthBar:ClearAllPoints()
-            unitFrame.healthBar:SetPoint("TOPLEFT", unitFrame, "TOPLEFT", 1, -1)
-            unitFrame.healthBar:SetPoint("BOTTOMRIGHT", unitFrame, "BOTTOMRIGHT", -1, 1)
-        end
+        UpdateHealthBarForPower(unitFrame, unit, DB)
     end
 end
 
@@ -496,4 +504,3 @@ function UF:HookTargetAndFocusPowerBars()
         end
     end
 end
-

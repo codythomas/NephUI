@@ -274,6 +274,33 @@ local function EnsureAnchorModeUnitVisibility(unitFrame, shouldForceShow)
         end
         unitFrame.__nephuiEditModeForced = true
         unitFrame:Show()
+
+        if unitFrame.unit and not UnitExists(unitFrame.unit) then
+            local db = NephUI.db and NephUI.db.profile and NephUI.db.profile.unitFrames
+            local dbUnit = unitFrame.unit
+            if dbUnit and dbUnit:match("^boss(%d+)$") then dbUnit = "boss" end
+            local DB = db and db[dbUnit]
+
+            if DB and unitFrame.healthBar then
+                local maxHealth = 100
+                local healthValue = 100
+                local fg = DB.Frame and DB.Frame.FGColor or { 0.5, 0.5, 0.5, 1 }
+                unitFrame.healthBar:SetMinMaxValues(0, maxHealth)
+                unitFrame.healthBar:SetValue(healthValue)
+                unitFrame.healthBar:SetStatusBarColor(fg[1] or 0.5, fg[2] or 0.5, fg[3] or 0.5, fg[4] or 1)
+                unitFrame.healthBar:Show()
+            end
+
+            if DB and unitFrame.healthBarBG then
+                local maxHealth = 100
+                local missing = 0
+                local bg = DB.Frame and DB.Frame.BGColor or { 0.1, 0.1, 0.1, 0.7 }
+                unitFrame.healthBarBG:SetMinMaxValues(0, maxHealth)
+                unitFrame.healthBarBG:SetValue(missing)
+                unitFrame.healthBarBG:SetStatusBarColor(bg[1] or 0.1, bg[2] or 0.1, bg[3] or 0.1, bg[4] or 0.7)
+                unitFrame.healthBarBG:Show()
+            end
+        end
     elseif unitFrame.__nephuiEditModeForced then
         unitFrame.__nephuiEditModeForced = nil
 
@@ -398,20 +425,6 @@ function UF:HookEditMode()
             end
         end)
         
-        -- Periodic update to keep anchors in sync (in case unit frames move)
-        if not self.AnchorUpdateTicker then
-            self.AnchorUpdateTicker = C_Timer.NewTicker(1/60, function() -- 60 FPS minimum as requested
-                local db = NephUI.db.profile.unitFrames
-                local toggleEnabled = db and db.General and db.General.ShowEditModeAnchors ~= false
-                local inEditMode = EditModeManagerFrame and EditModeManagerFrame.editModeActive
-                
-                -- Update if Edit Mode is active OR toggle is enabled
-                if inEditMode or toggleEnabled then
-                    SetViewerSelectionCenterAlpha()
-                    self:UpdateEditModeAnchors()
-                end
-            end)
-        end
         
         -- Initial call to set viewer selection center alpha
         SetViewerSelectionCenterAlpha()
