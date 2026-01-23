@@ -1,6 +1,8 @@
 local ADDON_NAME, ns = ...
 local NephUI = ns.Addon
+local L = ns.L or LibStub("AceLocale-3.0"):GetLocale(ADDON_NAME, true)
 local LSM = LibStub("LibSharedMedia-3.0")
+local buildVersion = select(4, GetBuildInfo())
 
 local function GetViewerOptions()
     return {
@@ -14,29 +16,57 @@ end
 local function CreateResourceBarOptions()
     return {
         type = "group",
-        name = "Resource Bars",
+        name = L["Resource Bars"] or "Resource Bars",
         order = 4,
         childGroups = "tab",
         args = {
             primary = {
                 type = "group",
-                name = "Primary",
+                name = L["Primary"] or "Primary",
                 order = 1,
                 args = {
                     header = {
                         type = "header",
-                        name = "Primary Power Bar Settings",
+                        name = L["Primary Power Bar Settings"] or "Primary Power Bar Settings",
                         order = 1,
                     },
                     enabled = {
                         type = "toggle",
-                        name = "Enable Primary Power Bar",
-                        desc = "Show your main resource (mana, energy, rage, etc.)",
+                        name = L["Enable Primary Power Bar"] or "Enable Primary Power Bar",
+                        desc = L["Show your main resource (mana, energy, rage, etc.)"] or "Show your main resource (mana, energy, rage, etc.)",
                         width = "full",
                         order = 2,
                         get = function() return NephUI.db.profile.powerBar.enabled end,
                         set = function(_, val)
                             NephUI.db.profile.powerBar.enabled = val
+                            NephUI:UpdatePowerBar()
+                        end,
+                    },
+                    smoothProgress = {
+                        type = "toggle",
+                        name = "Smooth Progress",
+                        desc = "Enable smooth animation for bar updates (requires WoW 12.0+)",
+                        width = "full",
+                        order = 3,
+                        hidden = function() return buildVersion < 120000 end,
+                        get = function() return NephUI.db.profile.powerBar.smoothProgress end,
+                        set = function(_, val)
+                            NephUI.db.profile.powerBar.smoothProgress = val
+                            NephUI:UpdatePowerBar()
+                        end,
+                    },
+                    updateFrequency = {
+                        type = "range",
+                        name = "Update Frequency",
+                        desc = "|cffff0000WARNING: Lower values = more frequent updates = higher CPU usage!|r How often to update the bar (in seconds).",
+                        order = 4,
+                        width = "full",
+                        min = 0.01,
+                        max = 0.5,
+                        step = 0.01,
+                        get = function() return NephUI.db.profile.powerBar.updateFrequency end,
+                        set = function(_, val)
+                            NephUI.db.profile.powerBar.updateFrequency = val
                             NephUI:UpdatePowerBar()
                         end,
                     },
@@ -210,8 +240,8 @@ local function CreateResourceBarOptions()
                     },
                     showText = {
                         type = "toggle",
-                        name = "Show Resource Number",
-                        desc = "Display current resource amount as text",
+                        name = L["Show Resource Number"] or "Show Resource Number",
+                        desc = L["Display current resource amount as text"] or "Display current resource amount as text",
                         order = 31,
                         width = "normal",
                         get = function() return NephUI.db.profile.powerBar.showText end,
@@ -222,8 +252,8 @@ local function CreateResourceBarOptions()
                     },
                     showManaAsPercent = {
                         type = "toggle",
-                        name = "Show Mana as Percent",
-                        desc = "Display mana as percentage instead of raw value",
+                        name = L["Show Mana as Percent"] or "Show Mana as Percent",
+                        desc = L["Display mana as percentage instead of raw value"] or "Display mana as percentage instead of raw value",
                         order = 32,
                         width = "normal",
                         get = function() return NephUI.db.profile.powerBar.showManaAsPercent end,
@@ -234,8 +264,8 @@ local function CreateResourceBarOptions()
                     },
                     showTicks = {
                         type = "toggle",
-                        name = "Show Ticks",
-                        desc = "Show segment markers for combo points, chi, etc.",
+                        name = L["Show Ticks"] or "Show Ticks",
+                        desc = L["Show segment markers for combo points, chi, etc."] or "Show segment markers for combo points, chi, etc.",
                         order = 33,
                         width = "normal",
                         get = function() return NephUI.db.profile.powerBar.showTicks end,
@@ -273,7 +303,7 @@ local function CreateResourceBarOptions()
                     },
                     textSize = {
                         type = "range",
-                        name = "Text Size",
+                        name = L["Text Size"] or "Text Size",
                         order = 34,
                         width = "normal",
                         min = 6, max = 24, step = 1,
@@ -285,7 +315,7 @@ local function CreateResourceBarOptions()
                     },
                     textX = {
                         type = "range",
-                        name = "Text Horizontal Offset",
+                        name = L["Text Horizontal Offset"] or "Text Horizontal Offset",
                         order = 35,
                         width = "normal",
                         min = -50, max = 50, step = 1,
@@ -297,7 +327,7 @@ local function CreateResourceBarOptions()
                     },
                     textY = {
                         type = "range",
-                        name = "Text Vertical Offset",
+                        name = L["Text Vertical Offset"] or "Text Vertical Offset",
                         order = 36,
                         width = "normal",
                         min = -50, max = 50, step = 1,
@@ -311,6 +341,7 @@ local function CreateResourceBarOptions()
             },
             secondary = {
                 type = "group",
+                name = L["Secondary"] or "Secondary",
                 name = "Secondary",
                 order = 2,
                 args = {
@@ -328,6 +359,34 @@ local function CreateResourceBarOptions()
                         get = function() return NephUI.db.profile.secondaryPowerBar.enabled end,
                         set = function(_, val)
                             NephUI.db.profile.secondaryPowerBar.enabled = val
+                            NephUI:UpdateSecondaryPowerBar()
+                        end,
+                    },
+                    smoothProgress = {
+                        type = "toggle",
+                        name = "Smooth Progress",
+                        desc = "Enable smooth animation for bar updates (requires WoW 12.0+)",
+                        width = "full",
+                        order = 3,
+                        hidden = function() return buildVersion < 120000 end,
+                        get = function() return NephUI.db.profile.secondaryPowerBar.smoothProgress end,
+                        set = function(_, val)
+                            NephUI.db.profile.secondaryPowerBar.smoothProgress = val
+                            NephUI:UpdateSecondaryPowerBar()
+                        end,
+                    },
+                    updateFrequency = {
+                        type = "range",
+                        name = "Update Frequency",
+                        desc = "|cffff0000WARNING: Lower values = more frequent updates = higher CPU usage!|r How often to update the bar (in seconds).",
+                        order = 4,
+                        width = "full",
+                        min = 0.01,
+                        max = 0.5,
+                        step = 0.01,
+                        get = function() return NephUI.db.profile.secondaryPowerBar.updateFrequency end,
+                        set = function(_, val)
+                            NephUI.db.profile.secondaryPowerBar.updateFrequency = val
                             NephUI:UpdateSecondaryPowerBar()
                         end,
                     },

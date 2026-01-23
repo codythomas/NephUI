@@ -6,6 +6,7 @@ local CustomIcons = NephUI.CustomIcons
 
 local Widgets = NephUI.GUI and NephUI.GUI.Widgets
 local THEME = NephUI.GUI and NephUI.GUI.THEME
+local LSM = LibStub("LibSharedMedia-3.0", true)
 
 -- Forward declarations
 local RefreshAllLayouts
@@ -525,6 +526,7 @@ local function BuildCountSettings(iconSettings)
         offsetX = cs.offsetX or -2,
         offsetY = cs.offsetY or 2,
         color = cs.color or {1, 1, 1, 1},
+        font = cs.font,  -- Font name from LSM, nil means use global font
     }
 end
 
@@ -620,6 +622,12 @@ local function ApplyIconSettings(iconFrame, iconData)
 
     local cs = BuildCountSettings(settings)
     local fontPath = NephUI:GetGlobalFont()
+    if cs.font and LSM then
+        local fetchedFont = LSM:Fetch("font", cs.font)
+        if fetchedFont then
+            fontPath = fetchedFont
+        end
+    end
     iconFrame.count:SetFont(fontPath, cs.size, "OUTLINE")
     if cs.color then
         iconFrame.count:SetTextColor(unpack(cs.color))
@@ -2175,6 +2183,36 @@ function CustomIcons:RefreshDynamicConfigUI()
             iconData.settings.countSettings.size = val
         end)
 
+        -- Count Font Type
+        do
+            local fontValues = {}
+            if LSM then
+                local hashTable = LSM:HashTable("font")
+                for name, _ in pairs(hashTable) do
+                    fontValues[name] = name
+                end
+            end
+            Widgets.CreateSelect(uiFrames.configParent, {
+                name = "Count Font Type",
+                values = fontValues,
+                get = function()
+                    local cs = iconData.settings.countSettings or {}
+                    return cs.font or (NephUI.db and NephUI.db.profile and NephUI.db.profile.general and NephUI.db.profile.general.globalFont) or "Expressway"
+                end,
+                set = function(_, val)
+                    iconData.settings.countSettings = iconData.settings.countSettings or {}
+                    iconData.settings.countSettings.font = val
+                    if iconKey and runtime.UpdateDynamicIcon then
+                        runtime.UpdateDynamicIcon(iconKey)
+                    end
+                    RefreshAllLayouts()
+                    CustomIcons:RefreshDynamicListUI()
+                end,
+                width = "full",
+            }, y, nil, nil, nil)
+            y = y + 40
+        end
+
         -- Count Color
         Widgets.CreateColor(uiFrames.configParent, {
             name = "Count Color",
@@ -2190,6 +2228,64 @@ function CustomIcons:RefreshDynamicConfigUI()
             end,
             width = "full",
         }, y)
+        y = y + 40
+
+        -- Count X Offset
+        addSlider("Count X Offset", -50, 50, 1, function()
+            local cs = iconData.settings.countSettings or {}
+            return cs.offsetX or -2
+        end, function(val)
+            iconData.settings.countSettings = iconData.settings.countSettings or {}
+            iconData.settings.countSettings.offsetX = val
+            if iconKey and runtime.UpdateDynamicIcon then
+                runtime.UpdateDynamicIcon(iconKey)
+            end
+            RefreshAllLayouts()
+            CustomIcons:RefreshDynamicListUI()
+        end)
+
+        -- Count Y Offset
+        addSlider("Count Y Offset", -50, 50, 1, function()
+            local cs = iconData.settings.countSettings or {}
+            return cs.offsetY or 2
+        end, function(val)
+            iconData.settings.countSettings = iconData.settings.countSettings or {}
+            iconData.settings.countSettings.offsetY = val
+            if iconKey and runtime.UpdateDynamicIcon then
+                runtime.UpdateDynamicIcon(iconKey)
+            end
+            RefreshAllLayouts()
+            CustomIcons:RefreshDynamicListUI()
+        end)
+
+        -- Count Anchor Point
+        Widgets.CreateSelect(uiFrames.configParent, {
+            name = "Count Anchor Point",
+            values = {
+                TOPLEFT = "Top Left",
+                TOP = "Top",
+                TOPRIGHT = "Top Right",
+                LEFT = "Left",
+                RIGHT = "Right",
+                BOTTOMLEFT = "Bottom Left",
+                BOTTOM = "Bottom",
+                BOTTOMRIGHT = "Bottom Right",
+            },
+            get = function()
+                local cs = iconData.settings.countSettings or {}
+                return cs.anchor or "BOTTOMRIGHT"
+            end,
+            set = function(_, val)
+                iconData.settings.countSettings = iconData.settings.countSettings or {}
+                iconData.settings.countSettings.anchor = val
+                if iconKey and runtime.UpdateDynamicIcon then
+                    runtime.UpdateDynamicIcon(iconKey)
+                end
+                RefreshAllLayouts()
+                CustomIcons:RefreshDynamicListUI()
+            end,
+            width = "full",
+        }, y, nil, nil, nil)
         y = y + 40
 
         -- Cooldown Text Size

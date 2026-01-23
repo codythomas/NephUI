@@ -175,7 +175,6 @@ function IconViewers:SkinIcon(icon, settings)
     local padding   = 0
     local zoom      = settings.zoom or 0
     local border    = icon.__CDM_Border
-    local cdPadding = 0
 
     -- This prevents stretching by cropping the texture to match the container aspect ratio
     iconTexture:ClearAllPoints()
@@ -237,15 +236,13 @@ function IconViewers:SkinIcon(icon, settings)
     -- Cooldown glow
     if icon.CooldownFlash then
         icon.CooldownFlash:ClearAllPoints()
-        icon.CooldownFlash:SetPoint("TOPLEFT", icon, "TOPLEFT", cdPadding, -cdPadding)
-        icon.CooldownFlash:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", -cdPadding, cdPadding)
+        icon.CooldownFlash:SetAllPoints(iconTexture)
     end
 
-    -- Cooldown swipe
+    -- Cooldown swipe - use SetAllPoints to match texture exactly for pixel-perfect alignment
     if icon.Cooldown then
         icon.Cooldown:ClearAllPoints()
-        icon.Cooldown:SetPoint("TOPLEFT", icon, "TOPLEFT", cdPadding, -cdPadding)
-        icon.Cooldown:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", -cdPadding, cdPadding)
+        icon.Cooldown:SetAllPoints(iconTexture)
         -- Match swipe to unmasked icon bounds
         icon.Cooldown:SetSwipeColor(0, 0, 0, 0.8)
         icon.Cooldown:SetDrawEdge(true)

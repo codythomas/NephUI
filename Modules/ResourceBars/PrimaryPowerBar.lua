@@ -13,6 +13,7 @@ local GetPrimaryResource = ResourceBars.GetPrimaryResource
 local GetResourceColor = ResourceBars.GetResourceColor
 local GetPrimaryResourceValue = ResourceBars.GetPrimaryResourceValue
 local tickedPowerTypes = ResourceBars.tickedPowerTypes
+local buildVersion = ResourceBars.buildVersion
 
 local function PixelSnap(value)
     return math.max(0, math.floor((value or 0) + 0.5))
@@ -101,17 +102,39 @@ end
 function ResourceBars:UpdatePowerBar()
     local cfg = NephUI.db.profile.powerBar
     if not cfg.enabled then
-        if NephUI.powerBar then NephUI.powerBar:Hide() end
+        if NephUI.powerBar then
+            NephUI.powerBar:Hide()
+            NephUI.powerBar:SetScript("OnUpdate", nil)
+        end
         return
     end
 
     local anchor = _G[cfg.attachTo]
     if not anchor or not anchor:IsShown() then
-        if NephUI.powerBar then NephUI.powerBar:Hide() end
+        local bar = NephUI.powerBar
+        if bar then
+            bar:Hide()
+            bar:SetScript("OnUpdate", nil)
+        end
         return
     end
 
     local bar = self:GetPowerBar()
+    
+    -- Setup/teardown OnUpdate ticker for faster updates
+    if cfg.fasterUpdates then
+        local updateFrequency = cfg.updateFrequency or 0.1
+        bar:SetScript("OnUpdate", function(frame, elapsed)
+            frame._updateElapsed = (frame._updateElapsed or 0) + elapsed
+            if frame._updateElapsed >= updateFrequency then
+                frame._updateElapsed = 0
+                ResourceBars:UpdatePowerBar()
+            end
+        end)
+    else
+        bar:SetScript("OnUpdate", nil)
+    end
+
     local resource = GetPrimaryResource()
     
     if not resource then
@@ -213,8 +236,9 @@ function ResourceBars:UpdatePowerBar()
     end
 
     -- Set bar values
-    bar.StatusBar:SetMinMaxValues(0, max)
-    bar.StatusBar:SetValue(current)
+    local interpolation = cfg.smoothProgress and buildVersion >= 120000 and Enum.StatusBarInterpolation.ExponentialEaseOut or nil
+    bar.StatusBar:SetMinMaxValues(0, max, interpolation)
+    bar.StatusBar:SetValue(current, interpolation)
 
     -- Set bar color
     local powerTypeColors = NephUI.db.profile.powerTypeColors

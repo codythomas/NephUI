@@ -267,7 +267,7 @@ local function EnsureAnchorModeUnitVisibility(unitFrame, shouldForceShow)
     if not unitFrame then return end
 
     if shouldForceShow then
-        if unitFrame.__nephuiUnitWatchActive then
+        if unitFrame.__nephuiUnitWatchActive and not InCombatLockdown() then
             UnregisterUnitWatch(unitFrame)
             unitFrame.__nephuiUnitWatchActive = nil
             unitFrame.__nephuiUnitWatchNeedsRestore = true
@@ -304,7 +304,7 @@ local function EnsureAnchorModeUnitVisibility(unitFrame, shouldForceShow)
     elseif unitFrame.__nephuiEditModeForced then
         unitFrame.__nephuiEditModeForced = nil
 
-        if unitFrame.__nephuiUnitWatchNeedsRestore then
+        if unitFrame.__nephuiUnitWatchNeedsRestore and not InCombatLockdown() then
             RegisterUnitWatch(unitFrame, false)
             unitFrame.__nephuiUnitWatchActive = true
             unitFrame.__nephuiUnitWatchNeedsRestore = nil

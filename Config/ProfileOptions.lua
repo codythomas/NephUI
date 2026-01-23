@@ -1,18 +1,20 @@
 local ADDON_NAME, ns = ...
 local NephUI = ns.Addon
+local L = ns.L or LibStub("AceLocale-3.0"):GetLocale(ADDON_NAME, true)
 
 local importBuffer = ""
+local newProfileNameBuffer = ""
 
 local function CreateProfileOptions()
     return {
         type = "group",
-        name = "Import / Export",
+        name = L["Import / Export"] or "Import / Export",
         order = 99,
         args = {
             desc = {
                 type  = "description",
                 order = 1,
-                name  = "Export your current profile as text to share, or paste a string to import.",
+                name  = L["Export your current profile as text to share, or paste a string to import."] or "Export your current profile as text to share, or paste a string to import.",
             },
 
             spacer1 = {
@@ -23,7 +25,7 @@ local function CreateProfileOptions()
 
             export = {
                 type      = "input",
-                name      = "Export Current Profile",
+                name      = L["Export Current Profile"] or "Export Current Profile",
                 order     = 10,
                 width     = "full",
                 multiline = true,
@@ -41,7 +43,7 @@ local function CreateProfileOptions()
 
             import = {
                 type      = "input",
-                name      = "Import Profile String",
+                name      = L["Import Profile String"] or "Import Profile String",
                 order     = 20,
                 width     = "full",
                 multiline = true,
@@ -53,9 +55,22 @@ local function CreateProfileOptions()
                 end,
             },
 
+            newProfileName = {
+                type  = "input",
+                name  = L["New Profile Name"] or "New Profile Name",
+                order = 25,
+                width = "full",
+                get   = function()
+                    return newProfileNameBuffer
+                end,
+                set   = function(_, val)
+                    newProfileNameBuffer = val or ""
+                end,
+            },
+
             importButton = {
                 type  = "execute",
-                name  = "Import",
+                name  = L["Import"] or "Import",
                 order = 30,
                 func  = function()
                     local importString = importBuffer
@@ -109,24 +124,32 @@ local function CreateProfileOptions()
                     end
                     
                     if not importString or importString == "" then
-                        print("|cffff0000NephUI: Import failed: No data found. Please paste your import string in the Import Profile String field.|r")
+                        print("|cffff0000" .. (L["NephUI: Import failed: No data found. Please paste your import string in the Import Profile String field."] or "NephUI: Import failed: No data found. Please paste your import string in the Import Profile String field.") .. "|r")
                         return
                     end
                     
-                    local ok, err = NephUI:ImportProfileFromString(importString)
+                    -- Get the new profile name
+                    local newProfileName = newProfileNameBuffer
+                    if newProfileName then
+                        newProfileName = newProfileName:gsub("^%s+", ""):gsub("%s+$", "")
+                    end
+                    
+                    if not newProfileName or newProfileName == "" then
+                        print("|cffff0000" .. (L["NephUI: Please enter a profile name for the imported profile."] or "NephUI: Please enter a profile name for the imported profile.") .. "|r")
+                        return
+                    end
+                    
+                    local ok, err = NephUI:ImportProfileFromString(importString, newProfileName)
                     if ok then
-                        print("|cff00ff00NephUI: Profile imported. Please reload your UI.|r")
-                        -- Clear the import buffer after successful import
+                        print("|cff00ff00" .. (L["NephUI: Profile imported as '%s'. Please reload your UI."] or "NephUI: Profile imported as '%s'. Please reload your UI."):format(newProfileName) .. "|r")
+                        -- Clear the buffers after successful import
                         importBuffer = ""
+                        newProfileNameBuffer = ""
                     else
-                        print("|cffff0000NephUI: Import failed: " .. (err or "Unknown error") .. "|r")
+                        local errMsg = L["NephUI: Import failed: %s"] or "NephUI: Import failed: %s"
+                        print("|cffff0000" .. (errMsg:format(err or "Unknown error")) .. "|r")
                     end
                 end,
-            },
-            spacer3 = {
-                type  = "description",
-                order = 31,
-                name  = "|cff00ff00PRESSING THE IMPORT BUTTON WILL OVERWRITE YOUR CURRENT PROFILE|r",
             },
         },
     }

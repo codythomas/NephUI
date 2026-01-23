@@ -43,7 +43,7 @@ function CastBars:GetCastBar()
 
     local sbTex = bar.status:GetStatusBarTexture()
     if sbTex then
-        sbTex:SetDrawLayer("BACKGROUND")
+        sbTex:SetDrawLayer("ARTWORK")  -- Draw above segment backgrounds for empowered casts
     end
 
     bar.bg = bar:CreateTexture(nil, "BACKGROUND")
@@ -258,9 +258,9 @@ function CastBars:OnPlayerSpellcastStart(unit, castGUID, spellID)
         return
     end
 
-    -- UnitCastingInfo can return additional values for empowered casts
-    -- name, text, texture, startTimeMS, endTimeMS, isTradeSkill, castID, notInterruptible, spellId, numStages
-    local name, _, texture, startTimeMS, endTimeMS, _, _, _, unitSpellID, numStages = UnitCastingInfo("player")
+    -- UnitCastingInfo now returns: name, text, texture, startTimeMS, endTimeMS, isTradeSkill, castID, notInterruptible, spellId, numStages, isEmpowered, castBarID
+    -- Regular casts are never empowered - empowered casts come through UnitChannelInfo or UNIT_SPELLCAST_EMPOWER_START
+    local name, _, texture, startTimeMS, endTimeMS, isTradeSkill, castID, notInterruptible, unitSpellID, numStages, isEmpowered, castBarID = UnitCastingInfo("player")
     if not name or not startTimeMS or not endTimeMS then
         if NephUI.castBar then NephUI.castBar:Hide() end
         return
@@ -271,21 +271,11 @@ function CastBars:OnPlayerSpellcastStart(unit, castGUID, spellID)
 
     bar.isChannel = false
     bar.castGUID  = castGUID
+    bar.castBarID = castBarID  -- Store castBarID for cast tracking
     
-    -- Check if this is an empowered cast (numStages > 0)
-    -- Use C_Spell.GetSpellEmpowerInfo to get accurate stage count
-    local isEmpowered = (numStages and numStages > 0) or false
-    local spellIDToCheck = spellID or unitSpellID
-    if spellIDToCheck and C_Spell and C_Spell.GetSpellEmpowerInfo then
-        local empowerInfo = C_Spell.GetSpellEmpowerInfo(spellIDToCheck)
-        if empowerInfo and empowerInfo.numStages and empowerInfo.numStages > 0 then
-            isEmpowered = true
-            numStages = empowerInfo.numStages
-        end
-    end
-    
-    bar.isEmpowered = isEmpowered
-    bar.numStages = numStages or 0
+    -- Regular casts are never empowered - don't initialize empowered stages here
+    bar.isEmpowered = false
+    bar.numStages = 0
 
     bar.icon:SetTexture(texture)
     bar.spellName:SetText(name)
@@ -308,16 +298,27 @@ function CastBars:OnPlayerSpellcastStart(unit, castGUID, spellID)
         bar.endTime   = now + dur
     end
 
-    -- Initialize empowered stages if this is an empowered cast
-    if bar.isEmpowered and bar.numStages > 0 then
-        -- Delay initialization slightly to ensure bar is properly sized
-        C_Timer.After(0.01, function()
-            if bar.isEmpowered and bar.numStages > 0 then
-                if CastBars.InitializeEmpoweredStages then
-                    CastBars:InitializeEmpoweredStages(bar)
+    -- Regular casts don't have empowered stages - only channels/empower events do
+    -- Clean up any existing empowered stages from previous cast
+    if bar.empoweredStages then
+        for _, stage in ipairs(bar.empoweredStages) do
+            if stage then
+                stage:Hide()
+                if stage.border then
+                    stage.border:Hide()
                 end
             end
-        end)
+        end
+    end
+    if bar.empoweredSegments then
+        for _, segment in ipairs(bar.empoweredSegments) do
+            if segment then
+                segment:Hide()
+            end
+        end
+    end
+    if bar.empoweredGlow then
+        bar.empoweredGlow:Hide()
     end
 
     bar:SetScript("OnUpdate", CastBar_OnUpdate)
@@ -335,25 +336,44 @@ function CastBars:OnPlayerSpellcastStop(unit, castGUID, spellID)
     -- This handles the case where a spell is attempted during a channel (GCD locked)
     -- and UNIT_SPELLCAST_STOP/FAILED fires, but the channel continues
     if NephUI.castBar.isChannel then
-        local name, _, texture, startTimeMS, endTimeMS = UnitChannelInfo("player")
+        local name, _, texture, startTimeMS, endTimeMS, isTradeSkill, castID, notInterruptible, unitSpellID, numStages, isEmpowered, castBarID = UnitChannelInfo("player")
         if name and startTimeMS and endTimeMS then
             -- Still channeling, update the cast bar instead of hiding it
             NephUI.castBar.icon:SetTexture(texture)
             NephUI.castBar.spellName:SetText(name)
             NephUI.castBar.startTime = startTimeMS / 1000
             NephUI.castBar.endTime = endTimeMS / 1000
+            NephUI.castBar.castBarID = castBarID
             return
         end
     end
 
     NephUI.castBar.castGUID  = nil
+    NephUI.castBar.castBarID = nil
     NephUI.castBar.isChannel = nil
     NephUI.castBar.isEmpowered = nil
     NephUI.castBar.numStages = nil
+    NephUI.castBar.lastNumStages = nil
+    NephUI.castBar.currentEmpoweredStage = nil
     if NephUI.castBar.empoweredStages then
         for _, stage in ipairs(NephUI.castBar.empoweredStages) do
-            stage:Hide()
+            if stage then
+                stage:Hide()
+                if stage.border then
+                    stage.border:Hide()
+                end
+            end
         end
+    end
+    if NephUI.castBar.empoweredSegments then
+        for _, segment in ipairs(NephUI.castBar.empoweredSegments) do
+            if segment then
+                segment:Hide()
+            end
+        end
+    end
+    if NephUI.castBar.empoweredGlow then
+        NephUI.castBar.empoweredGlow:Hide()
     end
     NephUI.castBar:Hide()
     NephUI.castBar:SetScript("OnUpdate", nil)
@@ -366,7 +386,9 @@ function CastBars:OnPlayerSpellcastChannelStart(unit, castGUID, spellID)
         return
     end
 
-    local name, _, texture, startTimeMS, endTimeMS = UnitChannelInfo("player")
+    -- UnitChannelInfo now returns: name, text, texture, startTimeMS, endTimeMS, isTradeSkill, castID, notInterruptible, spellId, numStages, isEmpowered, castBarID
+    -- Check UnitChannelInfo for empowered casts - if EmpowerStages (numStages) is present, it's empowered
+    local name, _, texture, startTimeMS, endTimeMS, isTradeSkill, castID, notInterruptible, unitSpellID, numStages, isEmpowered, castBarID = UnitChannelInfo("player")
     if not name or not startTimeMS or not endTimeMS then
         if NephUI.castBar then NephUI.castBar:Hide() end
         return
@@ -377,6 +399,14 @@ function CastBars:OnPlayerSpellcastChannelStart(unit, castGUID, spellID)
 
     bar.isChannel = true
     bar.castGUID  = castGUID
+    bar.castBarID = castBarID  -- Store castBarID for cast tracking
+    
+    -- Check if this is an empowered channel - if numStages (EmpowerStages) is present, it's empowered
+    -- Following FeelUI's approach: check for EmpowerStages from UnitChannelInfo
+    local isEmpoweredCast = (numStages and numStages > 0) or false
+    
+    bar.isEmpowered = isEmpoweredCast
+    bar.numStages = numStages or 0
 
     bar.icon:SetTexture(texture)
     bar.spellName:SetText(name)
@@ -391,6 +421,40 @@ function CastBars:OnPlayerSpellcastChannelStart(unit, castGUID, spellID)
     bar.startTime = startTimeMS / 1000
     bar.endTime   = endTimeMS / 1000
 
+    -- Initialize empowered stages only if this is actually an empowered channel
+    if bar.isEmpowered and bar.numStages > 0 then
+        -- Delay initialization slightly to ensure bar is properly sized
+        C_Timer.After(0.01, function()
+            if bar.isEmpowered and bar.numStages > 0 then
+                if CastBars.InitializeEmpoweredStages then
+                    CastBars:InitializeEmpoweredStages(bar)
+                end
+            end
+        end)
+    else
+        -- Clean up any existing empowered stages if this is a regular channel
+        if bar.empoweredStages then
+            for _, stage in ipairs(bar.empoweredStages) do
+                if stage then
+                    stage:Hide()
+                    if stage.border then
+                        stage.border:Hide()
+                    end
+                end
+            end
+        end
+        if bar.empoweredSegments then
+            for _, segment in ipairs(bar.empoweredSegments) do
+                if segment then
+                    segment:Hide()
+                end
+            end
+        end
+        if bar.empoweredGlow then
+            bar.empoweredGlow:Hide()
+        end
+    end
+
     bar:SetScript("OnUpdate", CastBar_OnUpdate)
     bar:Show()
 end
@@ -401,7 +465,7 @@ function CastBars:OnPlayerSpellcastChannelUpdate(unit, castGUID, spellID)
         return
     end
 
-    local name, _, texture, startTimeMS, endTimeMS = UnitChannelInfo("player")
+    local name, _, texture, startTimeMS, endTimeMS, isTradeSkill, castID, notInterruptible, unitSpellID, numStages, isEmpowered, castBarID = UnitChannelInfo("player")
     if not name or not startTimeMS or not endTimeMS then
         return
     end
@@ -409,12 +473,28 @@ function CastBars:OnPlayerSpellcastChannelUpdate(unit, castGUID, spellID)
     local bar = NephUI.castBar
     bar.isChannel = true
     bar.castGUID  = castGUID
+    bar.castBarID = castBarID  -- Update castBarID
+    
+    -- Update empowered status - check for EmpowerStages (numStages) from UnitChannelInfo
+    local isEmpoweredCast = (numStages and numStages > 0) or false
+    bar.isEmpowered = isEmpoweredCast
+    bar.numStages = numStages or 0
 
     bar.icon:SetTexture(texture)
     bar.spellName:SetText(name)
 
     bar.startTime = startTimeMS / 1000
     bar.endTime   = endTimeMS / 1000
+    
+    -- Reinitialize empowered stages if needed
+    if bar.isEmpowered and bar.numStages > 0 then
+        if bar.numStages ~= (bar.lastNumStages or 0) then
+            bar.lastNumStages = bar.numStages
+            if CastBars.InitializeEmpoweredStages then
+                CastBars:InitializeEmpoweredStages(bar)
+            end
+        end
+    end
 end
 
 -- Expose to main addon for backwards compatibility
@@ -424,4 +504,5 @@ NephUI.OnPlayerSpellcastStart = function(self, unit, castGUID, spellID) return C
 NephUI.OnPlayerSpellcastStop = function(self, unit, castGUID, spellID) return CastBars:OnPlayerSpellcastStop(unit, castGUID, spellID) end
 NephUI.OnPlayerSpellcastChannelStart = function(self, unit, castGUID, spellID) return CastBars:OnPlayerSpellcastChannelStart(unit, castGUID, spellID) end
 NephUI.OnPlayerSpellcastChannelUpdate = function(self, unit, castGUID, spellID) return CastBars:OnPlayerSpellcastChannelUpdate(unit, castGUID, spellID) end
+
 

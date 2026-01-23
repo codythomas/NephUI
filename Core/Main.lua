@@ -8,6 +8,9 @@ local NephUI = LibStub("AceAddon-3.0"):NewAddon(
 
 ns.Addon = NephUI
 
+-- Get localization table (should be loaded by Locales/Locale.lua)
+local L = ns.L or LibStub("AceLocale-3.0"):GetLocale(ADDON_NAME, true)
+
 local AceSerializer = LibStub("AceSerializer-3.0", true)
 local LibDeflate    = LibStub("LibDeflate", true)
 local AceDBOptions = LibStub("AceDBOptions-3.0", true)
@@ -156,39 +159,39 @@ end
 
 function NephUI:ExportProfileToString()
     if not self.db or not self.db.profile then
-        return "No profile loaded."
+        return L["No profile loaded."] or "No profile loaded."
     end
     if not AceSerializer or not LibDeflate then
-        return "Export requires AceSerializer-3.0 and LibDeflate."
+        return L["Export requires AceSerializer-3.0 and LibDeflate."] or "Export requires AceSerializer-3.0 and LibDeflate."
     end
 
     local serialized = AceSerializer:Serialize(self.db.profile)
     if not serialized or type(serialized) ~= "string" then
-        return "Failed to serialize profile."
+        return L["Failed to serialize profile."] or "Failed to serialize profile."
     end
 
     local compressed = LibDeflate:CompressDeflate(serialized)
     if not compressed then
-        return "Failed to compress profile."
+        return L["Failed to compress profile."] or "Failed to compress profile."
     end
 
     local encoded = LibDeflate:EncodeForPrint(compressed)
     if not encoded then
-        return "Failed to encode profile."
+        return L["Failed to encode profile."] or "Failed to encode profile."
     end
 
     return "NUI1:" .. encoded
 end
 
-function NephUI:ImportProfileFromString(str)
-    if not self.db or not self.db.profile then
-        return false, "No profile loaded."
+function NephUI:ImportProfileFromString(str, profileName)
+    if not self.db then
+        return false, L["No profile loaded."] or "No profile loaded."
     end
     if not AceSerializer or not LibDeflate then
-        return false, "Import requires AceSerializer-3.0 and LibDeflate."
+        return false, L["Import requires AceSerializer-3.0 and LibDeflate."] or "Import requires AceSerializer-3.0 and LibDeflate."
     end
     if not str or str == "" then
-        return false, "No data provided."
+        return false, L["No data provided."] or "No data provided."
     end
 
     str = str:gsub("%s+", "")
@@ -197,25 +200,48 @@ function NephUI:ImportProfileFromString(str)
 
     local compressed = LibDeflate:DecodeForPrint(str)
     if not compressed then
-        return false, "Could not decode string (maybe corrupted)."
+        return false, L["Could not decode string (maybe corrupted)."] or "Could not decode string (maybe corrupted)."
     end
 
     local serialized = LibDeflate:DecompressDeflate(compressed)
     if not serialized then
-        return false, "Could not decompress data."
+        return false, L["Could not decompress data."] or "Could not decompress data."
     end
 
     local ok, t = AceSerializer:Deserialize(serialized)
     if not ok or type(t) ~= "table" then
-        return false, "Could not deserialize profile."
+        return false, L["Could not deserialize profile."] or "Could not deserialize profile."
     end
 
-    local profile = self.db.profile
-    for k in pairs(profile) do
-        profile[k] = nil
-    end
-    for k, v in pairs(t) do
-        profile[k] = v
+    -- If profileName is provided, create a new profile
+    if profileName and profileName ~= "" then
+        -- Ensure unique name by checking if profile already exists
+        local baseName = profileName
+        local counter = 1
+        while self.db.profiles and self.db.profiles[profileName] do
+            counter = counter + 1
+            profileName = baseName .. " " .. counter
+        end
+
+        -- Create the new profile
+        if not self.db.profiles then
+            return false, L["Profile system not available."] or "Profile system not available."
+        end
+
+        self.db.profiles[profileName] = t
+        self.db:SetProfile(profileName)
+    else
+        -- Old behavior: overwrite current profile (for backwards compatibility)
+        if not self.db.profile then
+            return false, L["No profile loaded."] or "No profile loaded."
+        end
+        local profile = self.db.profile
+        for k in pairs(profile) do
+            profile[k] = nil
+        end
+        for k, v in pairs(t) do
+            profile[k] = v
+        end
     end
 
     if self.RefreshAll then
@@ -223,6 +249,36 @@ function NephUI:ImportProfileFromString(str)
     end
 
     return true
+end
+
+-- Wago UI Pack Installer Integration Functions
+function NephUI:ExportNephUI(profileKey)
+    local profile = self.db.profiles[profileKey]
+    if not profile then return nil end
+
+    local profileData = { profile = profile, }
+
+    local SerializedInfo = AceSerializer:Serialize(profileData)
+    local CompressedInfo = LibDeflate:CompressDeflate(SerializedInfo)
+    local EncodedInfo = LibDeflate:EncodeForPrint(CompressedInfo)
+    EncodedInfo = "!NephUI_" .. EncodedInfo
+    return EncodedInfo
+end
+
+function NephUI:ImportNephUI(importString, profileKey)
+    local DecodedInfo = LibDeflate:DecodeForPrint(importString:sub(9))
+    local DecompressedInfo = LibDeflate:DecompressDeflate(DecodedInfo)
+    local success, profileData = AceSerializer:Deserialize(DecompressedInfo)
+
+    if not success or type(profileData) ~= "table" then 
+        print("|cFF8080FF" .. (L["NephUI: Invalid Import String."] or "NephUI: Invalid Import String.") .. "|r") 
+        return 
+    end
+
+    if type(profileData.profile) == "table" then
+        self.db.profiles[profileKey] = profileData.profile
+        self.db:SetProfile(profileKey)
+    end
 end
 
 function NephUI:OnInitialize()
@@ -266,6 +322,8 @@ function NephUI:OnInitialize()
     
     self:RegisterChatCommand("nephui", "OpenConfig")
     self:RegisterChatCommand("nui", "OpenConfig")
+    self:RegisterChatCommand("nephframes", "OpenPartyRaidFramesConfig")
+    self:RegisterChatCommand("nframes", "OpenPartyRaidFramesConfig")
     self:RegisterChatCommand("nephuirefresh", "ForceRefreshBuffIcons")
     self:RegisterChatCommand("nephuicheckdualspec", "CheckDualSpec")
     
@@ -380,6 +438,12 @@ function NephUI:OnEnable()
     if self.ProcGlow and self.ProcGlow.Initialize then
         C_Timer.After(1.0, function()
             self.ProcGlow:Initialize()
+        end)
+    end
+
+    if self.Keybinds and self.Keybinds.Initialize then
+        C_Timer.After(1.0, function()
+            self.Keybinds:Initialize()
         end)
     end
 
@@ -524,6 +588,14 @@ function NephUI:OpenConfig()
     end
 end
 
+function NephUI:OpenPartyRaidFramesConfig()
+    if self.PartyFrames and self.PartyFrames.ToggleGUI then
+        self.PartyFrames:ToggleGUI()
+    else
+        print("|cffff0000[NephUI] Party/Raid frames GUI not loaded.|r")
+    end
+end
+
 function NephUI:CheckDualSpec()
     local LibDualSpec = LibStub("LibDualSpec-1.0", true)
     if not LibDualSpec then
@@ -578,7 +650,7 @@ function NephUI:CreateMinimapButton()
     local dataObj = LDB:NewDataObject(ADDON_NAME, {
         type = "launcher",
         icon = "Interface\\AddOns\\NephUI\\Media\\nephui.tga",
-        label = "NephUI",
+        label = L["NephUI"] or "NephUI",
         OnClick = function(clickedframe, button)
             if button == "LeftButton" then
                 self:OpenConfig()
@@ -587,9 +659,9 @@ function NephUI:CreateMinimapButton()
             end
         end,
         OnTooltipShow = function(tooltip)
-            tooltip:SetText("NephUI")
-            tooltip:AddLine("Left-click to open configuration", 1, 1, 1)
-            tooltip:AddLine("Right-click to open configuration", 1, 1, 1)
+            tooltip:SetText(L["NephUI"] or "NephUI")
+            tooltip:AddLine(L["Left-click to open configuration"] or "Left-click to open configuration", 1, 1, 1)
+            tooltip:AddLine(L["Right-click to open configuration"] or "Right-click to open configuration", 1, 1, 1)
         end,
     })
     

@@ -6,9 +6,11 @@ local ViewerOptions = ns.CreateViewerOptions
 local ResourceBarOptions = ns.CreateResourceBarOptions
 local CastBarOptions = ns.CreateCastBarOptions
 local CustomIconOptions = ns.CreateCustomIconOptions
+local IconCustomizationOptions = ns.CreateIconCustomizationOptions
 local UnitFrameOptions = ns.CreateUnitFrameOptionsGroup
 local PartyFrameOptions = ns.CreatePartyFrameOptions
 local RaidFrameOptions = ns.CreateRaidFrameOptions
+local ClickCastOptions = ns.CreateClickCastOptions
 local ProfileOptions = ns.CreateProfileOptions
 local ChatOptions = ns.CreateChatOptions
 local MinimapOptions = ns.CreateMinimapOptions
@@ -1178,6 +1180,7 @@ function NephUI:SetupOptions()
             -- PARTY & RAID FRAME TABS
             partyFrames = PartyFrameOptions(),
             raidFrames = RaidFrameOptions(),
+            clickCast = ClickCastOptions(),
 
             -- Cooldown Manager TAB
             viewers = {
@@ -1373,6 +1376,7 @@ function NephUI:SetupOptions()
                     utility = CreateViewerOptions("UtilityCooldownViewer", "Utility", 2),
                     buff = CreateViewerOptions("BuffIconCooldownViewer", "Buffs", 3),
                     buffBar = CreateBuffBarViewerOptions(4),
+                    iconCustomization = IconCustomizationOptions(),
                 },
             },
             
@@ -1467,6 +1471,21 @@ function NephUI:SetupOptions()
                 -- Merge all dual spec options into our isolated args
                 for key, option in pairs(dualSpecOptionsCopy) do
                     options.args.profiles.args[key] = option
+                end
+            end
+            
+            -- Override the enabled toggle's set function to refresh the GUI immediately
+            if options.args.profiles.args and options.args.profiles.args.enabled then
+                local originalEnabledSet = options.args.profiles.args.enabled.set
+                options.args.profiles.args.enabled.set = function(info, value)
+                    if originalEnabledSet then
+                        originalEnabledSet(info, value)
+                    end
+                    -- Refresh custom GUI if open
+                    local configFrame = _G["NephUI_ConfigFrame"]
+                    if configFrame and configFrame:IsShown() and configFrame.FullRefresh then
+                        configFrame:FullRefresh()
+                    end
                 end
             end
         end

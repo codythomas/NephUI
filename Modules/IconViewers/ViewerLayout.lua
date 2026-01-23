@@ -82,6 +82,14 @@ local function IsCooldownIconFrame(frame)
     return frame and (frame.icon or frame.Icon) and frame.Cooldown
 end
 
+local function IsPlaceholderIcon(iconFrame)
+    -- Blizzard creates placeholder icons without cooldownID
+    -- Real icons have a cooldownID property set
+    if not iconFrame then return true end
+    -- Check if cooldownID exists (real icons have this, placeholders don't)
+    return iconFrame.cooldownID == nil
+end
+
 local function NormalizeDirectionToken(token)
     if not token or token == "" then
         return nil
@@ -456,7 +464,12 @@ function IconViewers:ApplyViewerLayout(viewer)
 
     for _, child in ipairs({ container:GetChildren() }) do
         if IsCooldownIconFrame(child) and child:IsShown() then
-            table.insert(icons, child)
+            -- Filter out placeholder icons for BuffIconCooldownViewer (those without cooldownID)
+            if name == "BuffIconCooldownViewer" and IsPlaceholderIcon(child) then
+                -- Skip placeholder icons
+            else
+                table.insert(icons, child)
+            end
         end
     end
 
@@ -552,7 +565,10 @@ function IconViewers:RescanViewer(viewer)
 
     for _, child in ipairs({ container:GetChildren() }) do
         if IsCooldownIconFrame(child) then
-            if collectAllIcons or child:IsShown() then
+            -- Filter out placeholder icons for BuffIconCooldownViewer (those without cooldownID)
+            if name == "BuffIconCooldownViewer" and IsPlaceholderIcon(child) then
+                -- Skip placeholder icons entirely
+            elseif collectAllIcons or child:IsShown() then
                 table.insert(icons, child)
 
                 if not child.__cdmSkinned and not child.__cdmSkinPending then

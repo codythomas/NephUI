@@ -1977,6 +1977,101 @@ local function CreateUnitFrameOptions(unit, displayName, order)
         }
     end
     
+    -- Helper to create Indicator tab (boss, target, focus frames only)
+    local function CreateIndicatorTab()
+        if unit ~= "boss" and unit ~= "target" and unit ~= "focus" then return nil end
+        local DB = GetUnitDB(unit)
+        if not DB.RaidTargetIcon then DB.RaidTargetIcon = {} end
+        
+        return {
+            type = "group",
+            name = "Indicator",
+            order = 5,
+            args = {
+                raidMarkerHeader = {
+                    type = "header",
+                    name = "Raid Marker",
+                    order = 10,
+                },
+                raidMarkerEnabled = {
+                    type = "toggle",
+                    name = "Enable Raid Marker",
+                    desc = "Show raid target marker icon",
+                    order = 11,
+                    width = "full",
+                    get = function()
+                        return DB.RaidTargetIcon.Enabled ~= false
+                    end,
+                    set = function(_, val)
+                        DB.RaidTargetIcon.Enabled = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                raidMarkerScale = {
+                    type = "range",
+                    name = "Raid Marker Scale",
+                    desc = "Scale of the raid marker icon",
+                    order = 12,
+                    width = "full",
+                    min = 0.5, max = 2.5, step = 0.1,
+                    get = function()
+                        return DB.RaidTargetIcon.Scale or 1.0
+                    end,
+                    set = function(_, val)
+                        DB.RaidTargetIcon.Scale = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                raidMarkerAnchor = {
+                    type = "select",
+                    name = "Raid Marker Position",
+                    desc = "Anchor point for the raid marker",
+                    order = 13,
+                    width = "full",
+                    values = AnchorPoints,
+                    get = function()
+                        return DB.RaidTargetIcon.AnchorTo or "TOP"
+                    end,
+                    set = function(_, val)
+                        DB.RaidTargetIcon.AnchorTo = val
+                        DB.RaidTargetIcon.AnchorFrom = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                raidMarkerOffsetX = {
+                    type = "range",
+                    name = "Raid Marker X Offset",
+                    desc = "Horizontal offset for raid marker",
+                    order = 14,
+                    width = "normal",
+                    min = -200, max = 200, step = 1,
+                    get = function()
+                        return DB.RaidTargetIcon.OffsetX or 0
+                    end,
+                    set = function(_, val)
+                        DB.RaidTargetIcon.OffsetX = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                raidMarkerOffsetY = {
+                    type = "range",
+                    name = "Raid Marker Y Offset",
+                    desc = "Vertical offset for raid marker",
+                    order = 15,
+                    width = "normal",
+                    min = -200, max = 200, step = 1,
+                    get = function()
+                        return DB.RaidTargetIcon.OffsetY or 2
+                    end,
+                    set = function(_, val)
+                        DB.RaidTargetIcon.OffsetY = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+            },
+        }
+    end
+    
     -- Helper to create Status Indicators tab (player frame only)
     local function CreateStatusIndicatorsTab()
         if unit ~= "player" then return nil end
@@ -1985,6 +2080,7 @@ local function CreateUnitFrameOptions(unit, displayName, order)
         if not DB.StatusIndicators.Combat then DB.StatusIndicators.Combat = {} end
         if not DB.StatusIndicators.Resting then DB.StatusIndicators.Resting = {} end
         if not DB.LeaderIndicator then DB.LeaderIndicator = {} end
+        if not DB.RaidTargetIcon then DB.RaidTargetIcon = {} end
         
         return {
             type = "group",
@@ -2273,6 +2369,86 @@ local function CreateUnitFrameOptions(unit, displayName, order)
                         UpdateUnitFrame(unit)
                     end,
                 },
+                raidMarkerHeader = {
+                    type = "header",
+                    name = "Raid Marker",
+                    order = 60,
+                },
+                raidMarkerEnabled = {
+                    type = "toggle",
+                    name = "Enable Raid Marker",
+                    desc = "Show raid target marker icon",
+                    order = 61,
+                    width = "full",
+                    get = function()
+                        return DB.RaidTargetIcon.Enabled ~= false
+                    end,
+                    set = function(_, val)
+                        DB.RaidTargetIcon.Enabled = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                raidMarkerScale = {
+                    type = "range",
+                    name = "Raid Marker Scale",
+                    desc = "Scale of the raid marker icon",
+                    order = 62,
+                    width = "full",
+                    min = 0.5, max = 2.5, step = 0.1,
+                    get = function()
+                        return DB.RaidTargetIcon.Scale or 1.0
+                    end,
+                    set = function(_, val)
+                        DB.RaidTargetIcon.Scale = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                raidMarkerAnchor = {
+                    type = "select",
+                    name = "Raid Marker Position",
+                    desc = "Anchor point for the raid marker",
+                    order = 63,
+                    width = "full",
+                    values = AnchorPoints,
+                    get = function()
+                        return DB.RaidTargetIcon.AnchorTo or "TOP"
+                    end,
+                    set = function(_, val)
+                        DB.RaidTargetIcon.AnchorTo = val
+                        DB.RaidTargetIcon.AnchorFrom = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                raidMarkerOffsetX = {
+                    type = "range",
+                    name = "Raid Marker X Offset",
+                    desc = "Horizontal offset for raid marker",
+                    order = 64,
+                    width = "normal",
+                    min = -200, max = 200, step = 1,
+                    get = function()
+                        return DB.RaidTargetIcon.OffsetX or 0
+                    end,
+                    set = function(_, val)
+                        DB.RaidTargetIcon.OffsetX = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
+                raidMarkerOffsetY = {
+                    type = "range",
+                    name = "Raid Marker Y Offset",
+                    desc = "Vertical offset for raid marker",
+                    order = 65,
+                    width = "normal",
+                    min = -200, max = 200, step = 1,
+                    get = function()
+                        return DB.RaidTargetIcon.OffsetY or 2
+                    end,
+                    set = function(_, val)
+                        DB.RaidTargetIcon.OffsetY = val
+                        UpdateUnitFrame(unit)
+                    end,
+                },
             },
         }
     end
@@ -2302,6 +2478,11 @@ local function CreateUnitFrameOptions(unit, displayName, order)
     -- Add Status Indicators tab for player frame only
     if unit == "player" then
         tabs.statusIndicators = CreateStatusIndicatorsTab()
+    end
+    
+    -- Add Indicator tab for boss, target, and focus frames
+    if unit == "boss" or unit == "target" or unit == "focus" then
+        tabs.indicator = CreateIndicatorTab()
     end
 
     -- Add boss-specific tabs

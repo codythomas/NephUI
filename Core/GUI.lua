@@ -356,6 +356,7 @@ function Widgets.CreateRange(parent, option, yOffset, optionsTable)
     slider:SetOrientation("HORIZONTAL")
     slider:SetPoint("LEFT", label, "RIGHT", 10, 0)
     slider:SetPoint("RIGHT", valueEditBox, "LEFT", -10, 0)
+    slider:EnableMouse(true)
     
     local min = option.min or 0
     local max = option.max or 100
@@ -870,22 +871,48 @@ function Widgets.CreateInput(parent, option, yOffset, optionsTable)
     label:SetTextColor(THEME.text[1], THEME.text[2], THEME.text[3], 0.95)
 
         if isMultiline then
-        local scrollFrame = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
-        scrollFrame:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -5)
-        scrollFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -20, 0)
+        -- Create container frame with backdrop (the black box background)
+        local scrollContainer = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+        scrollContainer:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -5)
+        scrollContainer:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -20, 0)
+        scrollContainer:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8x8",
+            edgeFile = "Interface\\Buttons\\WHITE8x8",
+            edgeSize = 1,
+        })
+        scrollContainer:SetBackdropColor(0.08, 0.08, 0.08, 0.9)
+        scrollContainer:SetBackdropBorderColor(0.25, 0.25, 0.25, 1)
+        
+        local scrollFrame = CreateFrame("ScrollFrame", nil, scrollContainer, "UIPanelScrollFrameTemplate")
+        scrollFrame:SetPoint("TOPLEFT", 4, -4)
+        scrollFrame:SetPoint("BOTTOMRIGHT", -22, 4)
 
-        local editBox = CreateFrame("EditBox", nil, scrollFrame, "BackdropTemplate")
+        local editBox = CreateFrame("EditBox", nil, scrollFrame)
         editBox:SetMultiLine(true)
-        StyleEditBox(editBox, "GameFontNormal")
+        editBox:SetFontObject(GameFontHighlightSmall)
         editBox:SetTextColor(THEME.text[1], THEME.text[2], THEME.text[3], 1)
         editBox:SetWidth(scrollFrame:GetWidth() - 20)
         editBox:SetHeight(120)
-        CreateBackdrop(editBox, THEME.input, THEME.border)
-        editBox:SetTextInsets(15, 15, 10, 10)
+        editBox:SetAutoFocus(false)
+        editBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 
         scrollFrame:SetScrollChild(editBox)
-
-        editBox:EnableKeyboard(false)
+        
+        -- Make the container and scroll frame clickable to focus and highlight the EditBox
+        local function FocusAndHighlight()
+            editBox:SetFocus()
+            editBox:HighlightText()
+        end
+        
+        scrollContainer:EnableMouse(true)
+        scrollContainer:SetScript("OnMouseDown", FocusAndHighlight)
+        scrollFrame:EnableMouse(true)
+        scrollFrame:SetScript("OnMouseDown", FocusAndHighlight)
+        
+        -- Also highlight when EditBox gains focus (for direct clicks on the EditBox)
+        editBox:SetScript("OnEditFocusGained", function(self)
+            self:HighlightText()
+        end)
 
         if option.get then
             local text = ResolveGetSet(option.get, optionsTable, option) or ""
@@ -893,23 +920,6 @@ function Widgets.CreateInput(parent, option, yOffset, optionsTable)
             editBox:SetCursorPosition(0)
             editBox:ClearFocus()
         end
-
-        editBox:SetScript("OnEditFocusGained", function(self)
-            self:EnableKeyboard(true)
-            self:SetCursorPosition(string.len(self:GetText()))
-            -- Add visual feedback for focus
-            CreateBackdrop(self, THEME.input, THEME.accent)
-        end)
-
-        editBox:SetScript("OnEditFocusLost", function(self)
-            self:EnableKeyboard(false)
-            self:ClearFocus()
-            -- Remove visual feedback for focus
-            CreateBackdrop(self, THEME.input, THEME.border)
-        end)
-        
-        editBox:SetScript("OnEnter", function(self)
-        end)
         
         editBox:SetScript("OnTextChanged", function(self, userInput)
             if userInput and option.set then
@@ -925,6 +935,7 @@ function Widgets.CreateInput(parent, option, yOffset, optionsTable)
         
         frame.editBox = editBox
         frame.scrollFrame = scrollFrame
+        frame.scrollContainer = scrollContainer
     else
         local editBox = CreateFrame("EditBox", nil, frame, "BackdropTemplate")
         editBox:SetHeight(24)
@@ -1163,7 +1174,7 @@ local function RenderOptions(contentFrame, options, path, parentFrame)
                 cumulativeTabHeight = cumulativeTabHeight + (parentFrame._subTabContainerHeight or 35)
             end
         end
-        
+
         -- Create sub tab container as child of contentArea (not scrollChild) so it stays fixed
         local subTabContainer = CreateFrame("Frame", nil, parentContentArea or contentFrame, "BackdropTemplate")
         subTabContainer:SetHeight(35)
@@ -1341,6 +1352,43 @@ local function RenderOptions(contentFrame, options, path, parentFrame)
                     widget = dynFrame
                     widgetHeight = dynFrame:GetHeight() or 400
                 end
+            elseif option.type == "iconCustomization" then
+                if NephUI and NephUI.IconCustomization and NephUI.IconCustomization.BuildIconCustomizationUI then
+                    local iconFrame = CreateFrame("Frame", nil, contentFrame, "BackdropTemplate")
+                    iconFrame:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", 0, -yOffset)
+                    iconFrame:SetPoint("BOTTOMRIGHT", contentFrame, "BOTTOMRIGHT", 0, 0)
+                    NephUI.IconCustomization:BuildIconCustomizationUI(iconFrame)
+                    widget = iconFrame
+                    widgetHeight = iconFrame:GetHeight() or 400
+                end
+            elseif option.type == "partyRaidFramesPage" then
+                local embed = CreateFrame("Frame", nil, contentFrame, "BackdropTemplate")
+                embed:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", 0, -yOffset)
+                embed:SetPoint("RIGHT", contentFrame, "RIGHT", 0, 0)
+                embed:SetWidth(contentFrame:GetWidth() or 600)
+                embed:SetHeight(contentFrame:GetHeight() or 600)
+
+                local mode = option.mode or "party"
+                if NephUI and NephUI.PartyFrames and NephUI.PartyFrames.RenderOptionsPage then
+                    NephUI.PartyFrames:RenderOptionsPage(embed, mode, option.builder)
+                end
+
+                widget = embed
+                widgetHeight = embed:GetHeight() or 600
+            elseif option.type == "clickCastingPage" then
+                local embed = CreateFrame("Frame", nil, contentFrame, "BackdropTemplate")
+                embed:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", 0, -yOffset)
+                embed:SetPoint("RIGHT", contentFrame, "RIGHT", 0, 0)
+                embed:SetWidth(contentFrame:GetWidth() or 600)
+                embed:SetHeight(600)
+
+                if NephUI and NephUI.PartyFrames and NephUI.PartyFrames.ClickCast and NephUI.PartyFrames.ClickCast.CreateClickCastUI then
+                    local defaultTab = option.defaultTab or "spells"
+                    NephUI.PartyFrames.ClickCast:CreateClickCastUI(embed, defaultTab)
+                end
+
+                widget = embed
+                widgetHeight = embed:GetHeight() or 600
             elseif option.type == "input" then
                 widget = Widgets.CreateInput(contentFrame, option, yOffset, options)
                 widgetHeight = option.multiline and 150 or 35
@@ -1675,7 +1723,7 @@ function NephUI:CreateConfigFrame()
     end
     
     -- Disable Anchors button (rightmost, positioned before close button)
-    -- Controls unit frame anchors
+    -- Controls unit frame, party frame, and raid frame anchors
     local disableAnchorsBtn = CreateTitleButton("Disable Anchors", function()
         -- Disable unit frame anchors
         local db = NephUI.db.profile.unitFrames
@@ -1687,20 +1735,31 @@ function NephUI:CreateConfigFrame()
         db.General.ShowEditModeAnchors = false
         if NephUI.UnitFrames then
             NephUI.UnitFrames:UpdateEditModeAnchors()
-            -- Also hide boss frame preview mode
             NephUI.UnitFrames:HideBossFramesPreview()
+        end
+
+        -- Disable party and raid frame anchors
+        local NUF = NephUI.PartyFrames
+        if NUF then
+            if NUF.LockFrames then NUF:LockFrames() end
+            if NUF.LockRaidFrames then NUF:LockRaidFrames() end
+        end
+
+        -- Disable test mode
+        if NUF and NUF.DisableTestMode then
+            NUF:DisableTestMode()
         end
 
         -- Hide center line
         NephUI.UpdateCenterLine()
 
-        print("|cff00ff00[NephUI] Unit frame anchors disabled|r")
-    end, "Hide draggable anchors for unit frames")
+        print("|cff00ff00[NephUI] Anchors disabled (unit, party, raid frames)|r")
+    end, "Hide draggable anchors for unit, party, and raid frames")
     disableAnchorsBtn:SetPoint("RIGHT", closeBtn, "LEFT", -5, 0)
     disableAnchorsBtn:SetWidth(110)
     
     -- Enable Anchors button
-    -- Controls unit frame anchors
+    -- Controls unit frame, party frame, and raid frame anchors
     local enableAnchorsBtn = CreateTitleButton("Enable Anchors", function()
         -- Enable unit frame anchors
         local db = NephUI.db.profile.unitFrames
@@ -1712,15 +1771,26 @@ function NephUI:CreateConfigFrame()
         db.General.ShowEditModeAnchors = true
         if NephUI.UnitFrames then
             NephUI.UnitFrames:UpdateEditModeAnchors()
-            -- Also show boss frame preview mode
             NephUI.UnitFrames:ShowBossFramesPreview()
+        end
+
+        -- Enable party and raid frame anchors (show movers for drag-to-reposition)
+        local NUF = NephUI.PartyFrames
+        if NUF then
+            if NUF.UnlockFrames then NUF:UnlockFrames() end
+            if NUF.UnlockRaidFrames then NUF:UnlockRaidFrames() end
+        end
+
+        -- Enable test mode
+        if NUF and NUF.EnableTestMode then
+            NUF:EnableTestMode("party")
         end
 
         -- Show center line
         NephUI.UpdateCenterLine()
 
-        print("|cff00ff00[NephUI] All anchors enabled|r")
-    end, "Show draggable anchors for unit frames and action bars (works independently of Edit Mode)")
+        print("|cff00ff00[NephUI] Anchors enabled (unit, party, raid frames)|r")
+    end, "Show draggable anchors for unit, party, raid frames, and action bars (works independently of Edit Mode)")
     enableAnchorsBtn:SetPoint("RIGHT", disableAnchorsBtn, "LEFT", -5, 0)
     enableAnchorsBtn:SetWidth(110)
     
@@ -1818,6 +1888,70 @@ function NephUI:CreateConfigFrame()
                 if widget.Refresh then
                     widget:Refresh()
                 end
+            end
+        end
+    end
+    
+    -- Soft refresh - reload content without flash (preserves scroll position)
+    frame.SoftRefresh = function(self)
+        if self.currentTab and self.configOptions then
+            -- Store current scroll position
+            local scrollPos = self.scrollFrame:GetVerticalScroll()
+            
+            -- Store which sub-tab is active
+            local activeSubTabKey = nil
+            if self.scrollChild and self.scrollChild.subTabButtons then
+                local tabOption = self.configOptions.args[self.currentTab]
+                if tabOption and tabOption.args then
+                    local sortedTabs = {}
+                    for key, option in pairs(tabOption.args) do
+                        if option.type == "group" or (option.type ~= "group" and option.type ~= "header" and option.type ~= "description") then
+                            table.insert(sortedTabs, {key = key, option = option, order = option.order or 999})
+                        end
+                    end
+                    table.sort(sortedTabs, function(a, b) return a.order < b.order end)
+                    
+                    for i, btn in ipairs(self.scrollChild.subTabButtons) do
+                        if btn.active and sortedTabs[i] then
+                            activeSubTabKey = sortedTabs[i].key
+                            break
+                        end
+                    end
+                end
+            end
+            
+            local tabOption = self.configOptions.args[self.currentTab]
+            if tabOption then
+                -- Re-render content
+                RenderOptions(self.scrollChild, tabOption, {self.currentTab}, self)
+                
+                -- Restore the active sub-tab
+                if activeSubTabKey and self.scrollChild.subTabButtons then
+                    local newTabOption = self.configOptions.args[self.currentTab]
+                    if newTabOption and newTabOption.args then
+                        local sortedTabs = {}
+                        for key, option in pairs(newTabOption.args) do
+                            if option.type == "group" or (option.type ~= "group" and option.type ~= "header" and option.type ~= "description") then
+                                table.insert(sortedTabs, {key = key, option = option, order = option.order or 999})
+                            end
+                        end
+                        table.sort(sortedTabs, function(a, b) return a.order < b.order end)
+                        
+                        for i, item in ipairs(sortedTabs) do
+                            if item.key == activeSubTabKey and self.scrollChild.subTabButtons[i] then
+                                self.scrollChild.subTabButtons[i]:Click()
+                                break
+                            end
+                        end
+                    end
+                end
+                
+                -- Restore scroll position
+                C_Timer.After(0.01, function()
+                    if self.scrollFrame then
+                        self.scrollFrame:SetVerticalScroll(scrollPos)
+                    end
+                end)
             end
         end
     end

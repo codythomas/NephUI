@@ -1,5 +1,6 @@
-﻿local ADDON_NAME, ns = ...
+local ADDON_NAME, ns = ...
 local NephUI = ns.Addon
+local LSM = LibStub("LibSharedMedia-3.0", true)
 
 -- Helper function to get charge anchor options
 local function GetChargeAnchorOptions()
@@ -752,6 +753,230 @@ local function CreateViewerOptions(viewerKey, displayName, order)
             },
         },
     }
+    
+    -- Add keybind and ignoreAuraOverride options at the top only for Essential and Utility viewers
+    if viewerKey == "EssentialCooldownViewer" or viewerKey == "UtilityCooldownViewer" then
+        local viewerSettingName = (viewerKey == "EssentialCooldownViewer") and "Essential" or "Utility"
+        
+        -- Keybind Text Toggle
+        ret.args.showKeybinds = {
+            type = "toggle",
+            name = "Show Keybind Text",
+            desc = "Display keybind text from action bars on cooldown icons",
+            order = 2.1,
+            width = "full",
+            get = function()
+                return NephUI.db.profile["cooldownManager_showKeybinds_" .. viewerSettingName] or false
+            end,
+            set = function(_, val)
+                NephUI.db.profile["cooldownManager_showKeybinds_" .. viewerSettingName] = val
+                if NephUI.Keybinds then
+                    NephUI.Keybinds:OnSettingChanged(viewerSettingName)
+                end
+            end,
+        }
+        
+        -- Keybind Text Settings Header
+        ret.args.keybindHeader = {
+            type = "header",
+            name = "Keybind Text Settings",
+            order = 2.15,
+        }
+        
+        -- Keybind Font
+        ret.args.keybindFont = {
+            type = "select",
+            name = "Font",
+            desc = "Font used for keybind text",
+            order = 2.2,
+            width = "full",
+            values = function()
+                local names = {}
+                if LSM then
+                    local hashTable = LSM:HashTable("font")
+                    for name, _ in pairs(hashTable) do
+                        names[name] = name
+                    end
+                end
+                names["Friz Quadrata TT"] = "Friz Quadrata TT"
+                return names
+            end,
+            get = function()
+                local font = NephUI.db.profile["cooldownManager_keybindFontName_" .. viewerSettingName]
+                if not font or font == "" then
+                    font = NephUI.db.profile.cooldownManager_keybindFontName or "Friz Quadrata TT"
+                end
+                return font
+            end,
+            set = function(_, val)
+                NephUI.db.profile["cooldownManager_keybindFontName_" .. viewerSettingName] = val
+                if NephUI.Keybinds then
+                    NephUI.Keybinds:ApplyKeybindSettings(viewerKey)
+                end
+            end,
+            disabled = function()
+                return not (NephUI.db.profile["cooldownManager_showKeybinds_" .. viewerSettingName] or false)
+            end,
+        }
+        
+        -- Keybind Font Size
+        ret.args.keybindFontSize = {
+            type = "range",
+            name = "Font Size",
+            desc = "Font size for keybind text",
+            order = 2.3,
+            width = "full",
+            min = 8,
+            max = 48,
+            step = 1,
+            get = function()
+                return NephUI.db.profile["cooldownManager_keybindFontSize_" .. viewerSettingName] or 14
+            end,
+            set = function(_, val)
+                NephUI.db.profile["cooldownManager_keybindFontSize_" .. viewerSettingName] = val
+                if NephUI.Keybinds then
+                    NephUI.Keybinds:ApplyKeybindSettings(viewerKey)
+                end
+            end,
+            disabled = function()
+                return not (NephUI.db.profile["cooldownManager_showKeybinds_" .. viewerSettingName] or false)
+            end,
+        }
+        
+        -- Keybind Text Color
+        ret.args.keybindFontColor = {
+            type = "color",
+            name = "Text Color",
+            desc = "Color for keybind text",
+            order = 2.4,
+            width = "normal",
+            hasAlpha = true,
+            get = function()
+                local c = NephUI.db.profile["cooldownManager_keybindFontColor_" .. viewerSettingName]
+                if not c then
+                    c = NephUI.db.profile.cooldownManager_keybindFontColor or {1, 1, 1, 1}
+                end
+                return c[1], c[2], c[3], c[4] or 1
+            end,
+            set = function(_, r, g, b, a)
+                NephUI.db.profile["cooldownManager_keybindFontColor_" .. viewerSettingName] = {r, g, b, a or 1}
+                if NephUI.Keybinds then
+                    NephUI.Keybinds:ApplyKeybindSettings(viewerKey)
+                end
+            end,
+            disabled = function()
+                return not (NephUI.db.profile["cooldownManager_showKeybinds_" .. viewerSettingName] or false)
+            end,
+        }
+        
+        -- Keybind Anchor Point
+        ret.args.keybindAnchor = {
+            type = "select",
+            name = "Anchor Point",
+            desc = "Position anchor for keybind text",
+            order = 2.5,
+            width = "normal",
+            values = {
+                TOP = "Top",
+                TOPRIGHT = "Top Right",
+                TOPLEFT = "Top Left",
+                RIGHT = "Right",
+                BOTTOMRIGHT = "Bottom Right",
+                BOTTOM = "Bottom",
+                BOTTOMLEFT = "Bottom Left",
+                LEFT = "Left",
+                CENTER = "Center",
+            },
+            get = function()
+                return NephUI.db.profile["cooldownManager_keybindAnchor_" .. viewerSettingName] or "TOPRIGHT"
+            end,
+            set = function(_, val)
+                NephUI.db.profile["cooldownManager_keybindAnchor_" .. viewerSettingName] = val
+                if NephUI.Keybinds then
+                    NephUI.Keybinds:ApplyKeybindSettings(viewerKey)
+                end
+            end,
+            disabled = function()
+                return not (NephUI.db.profile["cooldownManager_showKeybinds_" .. viewerSettingName] or false)
+            end,
+        }
+        
+        -- Keybind X Offset
+        ret.args.keybindOffsetX = {
+            type = "range",
+            name = "X Offset",
+            desc = "Horizontal offset for keybind text",
+            order = 2.6,
+            width = "normal",
+            min = -40,
+            max = 40,
+            step = 1,
+            get = function()
+                return NephUI.db.profile["cooldownManager_keybindOffsetX_" .. viewerSettingName] or -3
+            end,
+            set = function(_, val)
+                NephUI.db.profile["cooldownManager_keybindOffsetX_" .. viewerSettingName] = val
+                if NephUI.Keybinds then
+                    NephUI.Keybinds:ApplyKeybindSettings(viewerKey)
+                end
+            end,
+            disabled = function()
+                return not (NephUI.db.profile["cooldownManager_showKeybinds_" .. viewerSettingName] or false)
+            end,
+        }
+        
+        -- Keybind Y Offset
+        ret.args.keybindOffsetY = {
+            type = "range",
+            name = "Y Offset",
+            desc = "Vertical offset for keybind text",
+            order = 2.7,
+            width = "normal",
+            min = -40,
+            max = 40,
+            step = 1,
+            get = function()
+                return NephUI.db.profile["cooldownManager_keybindOffsetY_" .. viewerSettingName] or -3
+            end,
+            set = function(_, val)
+                NephUI.db.profile["cooldownManager_keybindOffsetY_" .. viewerSettingName] = val
+                if NephUI.Keybinds then
+                    NephUI.Keybinds:ApplyKeybindSettings(viewerKey)
+                end
+            end,
+            disabled = function()
+                return not (NephUI.db.profile["cooldownManager_showKeybinds_" .. viewerSettingName] or false)
+            end,
+        }
+        
+        -- Hide Aura Swipe Toggle
+        ret.args.hideAuraSwipe = {
+            type = "toggle",
+            name = "Hide Aura Swipe",
+            desc = "Show the actual spell cooldown instead of the aura/buff duration. When enabled, the icon will display your spell's cooldown even while the buff is active, with desaturation applied.",
+            order = 2.8,
+            width = "full",
+            get = function()
+                return NephUI.db.profile.viewers[viewerKey].ignoreAuraOverride or false
+            end,
+            set = function(_, val)
+                if not NephUI.db.profile.viewers[viewerKey] then
+                    NephUI.db.profile.viewers[viewerKey] = {}
+                end
+                NephUI.db.profile.viewers[viewerKey].ignoreAuraOverride = val
+                -- Refresh all icons to apply the change
+                if NephUI.AuraOverride and NephUI.AuraOverride.RefreshViewer then
+                    local viewer = _G[viewerKey]
+                    if viewer then
+                        NephUI.AuraOverride:RefreshViewer(viewer)
+                    end
+                end
+                if NephUI.RefreshViewers then
+                    NephUI:RefreshViewers()
+                end
+            end,
+        }
+    end
     
     -- Add button to open config panel for BuffIconCooldownViewer (at the top)
     if viewerKey == "BuffIconCooldownViewer" then

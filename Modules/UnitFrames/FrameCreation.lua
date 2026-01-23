@@ -227,12 +227,38 @@ function UF:CreateUnitFrame(unit)
         end
     end
     
+    -- Raid target icon (player, target, focus, boss)
+    if (unit == "player" or unit == "target" or unit == "focus" or unit:match("^boss%d+$")) and DB.RaidTargetIcon then
+        local RaidTargetDB = DB.RaidTargetIcon
+        if not unitFrame.raidTargetIcon then
+            -- Create a frame to hold the texture for better layering control
+            local raidTargetFrame = CreateFrame("Frame", nil, unitFrame)
+            raidTargetFrame:SetSize(16, 16)
+            raidTargetFrame:SetPoint(RaidTargetDB.AnchorFrom or "TOP", unitFrame, RaidTargetDB.AnchorTo or "TOP", RaidTargetDB.OffsetX or 0, RaidTargetDB.OffsetY or 2)
+            raidTargetFrame:SetFrameLevel(unitFrame:GetFrameLevel() + 5)
+            raidTargetFrame:Hide()
+            
+            -- Create texture on the frame
+            local raidTargetTexture = raidTargetFrame:CreateTexture(nil, "OVERLAY")
+            raidTargetTexture:SetAllPoints()
+            raidTargetTexture:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons")
+            raidTargetTexture:SetDrawLayer("OVERLAY", 6)
+            
+            unitFrame.raidTargetIcon = raidTargetFrame
+            unitFrame.raidTargetIcon.texture = raidTargetTexture
+        end
+    end
+    
     -- Frame attributes
     unitFrame.unit = unit
     unitFrame:RegisterForClicks("AnyUp")
     unitFrame:SetAttribute("unit", unit)
     unitFrame:SetAttribute("*type1", "target")
     unitFrame:SetAttribute("*type2", "togglemenu")
+    
+    -- Register frame for click casting support
+    _G.ClickCastFrames = _G.ClickCastFrames or {}
+    _G.ClickCastFrames[unitFrame] = true
     
     -- Events
     unitFrame:RegisterEvent("UNIT_HEALTH")
@@ -264,6 +290,11 @@ function UF:CreateUnitFrame(unit)
         unitFrame:RegisterEvent("UNIT_MAXPOWER")
     end
     
+    -- Register raid target update event (player, target, focus, boss)
+    if unit == "player" or unit == "target" or unit == "focus" or unit:match("^boss%d+$") then
+        unitFrame:RegisterEvent("RAID_TARGET_UPDATE")
+    end
+    
     -- Register UNIT_AURA for target and boss frames to update auras
     if unit == "target" or unit:match("^boss%d+$") then
         unitFrame:RegisterEvent("UNIT_AURA")
@@ -274,38 +305,25 @@ function UF:CreateUnitFrame(unit)
         unitFrame:RegisterEvent("UNIT_TARGET")
     end
     
-    RegisterUnitWatch(unitFrame, false)
-    unitFrame.__nephuiUnitWatchActive = true
+    if not InCombatLockdown() then
+        RegisterUnitWatch(unitFrame, false)
+        unitFrame.__nephuiUnitWatchActive = true
+    end
     unitFrame.__nuiUFMouseoverActive = unitFrame:IsMouseOver() == true
     UF.UpdateMouseoverHighlight(unitFrame)
     
-    --[[
-    local function SetTooltipDefault(owner)
-        -- Use Blizzard's default anchor, which respects user settings
-        if GameTooltip_SetDefaultAnchor then
-            GameTooltip_SetDefaultAnchor(GameTooltip, owner or UIParent)
-        else
-            -- Fallback: behave like a typical default bottom-right tooltip
-            GameTooltip:SetOwner(owner or UIParent, "ANCHOR_NONE")
-            GameTooltip:ClearAllPoints()
-            GameTooltip:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -13, 130)
-        end
-    end
-    ]]
-    
-    unitFrame:SetScript("OnEnter", function(self)
+    -- Hook into Blizzard's unit frame tooltip functions
+    unitFrame:HookScript("OnEnter", function(self)
         UF.SetMouseoverHighlightState(self, true)
-        -- Tooltip intentionally disabled
-        -- local unit = self.unit
-        -- if unit and UnitExists(unit) then
-        --     SetTooltipDefault(self)
-        --     GameTooltip:SetUnit(unit)
-        -- end
+        if UnitFrame_OnEnter then
+            UnitFrame_OnEnter(self)
+        end
     end)
-    unitFrame:SetScript("OnLeave", function(self)
+    unitFrame:HookScript("OnLeave", function(self)
         UF.SetMouseoverHighlightState(self, false)
-        -- Tooltip intentionally disabled
-        -- GameTooltip:Hide()
+        if UnitFrame_OnLeave then
+            UnitFrame_OnLeave(self)
+        end
     end)
 
     -- Update frame when shown (important for boss frames)

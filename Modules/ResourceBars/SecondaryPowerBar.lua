@@ -15,6 +15,7 @@ local GetSecondaryResourceValue = ResourceBars.GetSecondaryResourceValue
 local GetChargedPowerPoints = ResourceBars.GetChargedPowerPoints
 local tickedPowerTypes = ResourceBars.tickedPowerTypes
 local fragmentedPowerTypes = ResourceBars.fragmentedPowerTypes
+local buildVersion = ResourceBars.buildVersion
 
 local function PixelSnap(value)
     return math.max(0, math.floor((value or 0) + 0.5))
@@ -178,7 +179,7 @@ end
 
 function ResourceBars:CreateFragmentedPowerBars(bar, resource)
     local cfg = NephUI.db.profile.secondaryPowerBar
-    local maxPower = UnitPowerMax("player", resource)
+    local maxPower = (resource == "MAELSTROM_WEAPON" and 5) or UnitPowerMax("player", resource) or 0
     
     for i = 1, maxPower do
         if not bar.FragmentedPowerBars[i] then
@@ -186,17 +187,14 @@ function ResourceBars:CreateFragmentedPowerBars(bar, resource)
             -- Use GetTexture helper: if cfg.texture is set, use it; otherwise use global texture
             local tex = NephUI:GetTexture(cfg.texture)
             fragmentBar:SetStatusBarTexture(tex)
-            fragmentBar:GetStatusBarTexture()
             fragmentBar:SetOrientation("HORIZONTAL")
-            fragmentBar:SetFrameLevel(bar:GetFrameLevel() + 1)
+            fragmentBar:SetFrameLevel(bar.StatusBar:GetFrameLevel())
             bar.FragmentedPowerBars[i] = fragmentBar
             
-            -- Create text for reload time display (parented to RuneTimerTextFrame for higher frame level)
-            local text = bar.RuneTimerTextFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            text:SetPoint("TOP", fragmentBar, "TOP", NephUI:Scale(cfg.runeTimerTextX or 0), NephUI:Scale(cfg.runeTimerTextY or 0))
+            -- Create text for reload time display (centered on fragment bar)
+            local text = fragmentBar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            text:SetPoint("CENTER", fragmentBar, "CENTER", 0, 0)
             text:SetJustifyH("CENTER")
-            text:SetFont(NephUI:GetGlobalFont(), cfg.runeTimerTextSize or 10, "OUTLINE")
-            text:SetShadowOffset(0, 0)
             text:SetText("")
             bar.FragmentedPowerBarTexts[i] = text
         end
@@ -205,51 +203,107 @@ end
 
 function ResourceBars:UpdateFragmentedPowerDisplay(bar, resource)
     local cfg = NephUI.db.profile.secondaryPowerBar
-    local maxPower = UnitPowerMax("player", resource)
+    local maxPower = (resource == "MAELSTROM_WEAPON" and 5) or UnitPowerMax("player", resource)
     if maxPower <= 0 then return end
 
     local barWidth = bar:GetWidth()
     local barHeight = bar:GetHeight()
-    -- Calculate base fragmented bar width - use floor to ensure pixel-perfect alignment
-    -- This ensures each fragment is a whole pixel width, preventing sub-pixel rendering
-    local baseFragmentedBarWidth = math.floor(barWidth / maxPower)
-    -- Calculate the remaining width that needs to be distributed to the last rune
-    local remainingWidth = barWidth - (baseFragmentedBarWidth * maxPower)
-    
-    -- Hide the main status bar fill (we display bars representing one (1) unit of resource each)
-    bar.StatusBar:SetAlpha(0)
+    local fragmentedBarWidth = barWidth / maxPower
+    local fragmentedBarHeight = barHeight / maxPower
 
-    -- Update texture for all fragmented bars (use per-bar texture if set, otherwise use global)
-    local tex = NephUI:GetTexture(cfg.texture)
-    for i = 1, maxPower do
-        if bar.FragmentedPowerBars[i] then
-            bar.FragmentedPowerBars[i]:SetStatusBarTexture(tex)
+    local r, g, b, a = bar.StatusBar:GetStatusBarColor()
+    local color = { r = r, g = g, b = b, a = a or 1 }
+
+    if resource == Enum.PowerType.Essence then
+        local current = UnitPower("player", resource)
+        local maxEssence = UnitPowerMax("player", resource)
+        local regenRate = (type(GetPowerRegenForPowerType) == "function" and GetPowerRegenForPowerType(resource)) or 0.2
+        local tickDuration = 5 / (5 / (1 / regenRate))
+        local now = GetTime()
+
+        bar._NextEssenceTick = bar._NextEssenceTick or nil
+        bar._LastEssence = bar._LastEssence or current
+
+        -- If we gained an essence, reset timer
+        if current > bar._LastEssence then
+            if current < maxEssence then
+                bar._NextEssenceTick = now + tickDuration
+            else
+                bar._NextEssenceTick = nil
+            end
         end
-    end
 
-    local color
-    local powerTypeColors = NephUI.db.profile.powerTypeColors
-    if powerTypeColors.useClassColor then
-        local _, class = UnitClass("player")
-        local classColor = RAID_CLASS_COLORS[class]
-        if classColor then
-            color = { r = classColor.r, g = classColor.g, b = classColor.b }
-        else
-            color = GetResourceColor(resource)
+        -- If missing essence and no timer, start it
+        if current < maxEssence and not bar._NextEssenceTick then
+            bar._NextEssenceTick = now + tickDuration
         end
-    elseif powerTypeColors.colors[resource] then
-        local r, g, b, a = powerTypeColors.colors[resource][1], powerTypeColors.colors[resource][2], powerTypeColors.colors[resource][3], powerTypeColors.colors[resource][4] or 1
-        color = { r = r, g = g, b = b, a = a }
-    else
-        color = GetResourceColor(resource)
-    end
 
-    if resource == Enum.PowerType.Runes then
+        -- If full essence, hide timer
+        if current >= maxEssence then
+            bar._NextEssenceTick = nil
+        end
+
+        bar._LastEssence = current
+
+        local displayOrder = {}
+        local stateList = {}
+        for i = 1, maxEssence do
+            if i <= current then
+                stateList[i] = "full"
+            elseif i == current + 1 then
+                stateList[i] = bar._NextEssenceTick and "partial" or "empty"
+            else
+                stateList[i] = "empty"
+            end
+            table.insert(displayOrder, i)
+        end
+
+        bar.StatusBar:SetValue(current)
+
+        local precision = (cfg.fragmentedPowerBarTextPrecision and math.max(0, string.len(cfg.fragmentedPowerBarTextPrecision) - 3)) or 0
+        local interpolation = cfg.smoothProgress and buildVersion >= 120000 and Enum.StatusBarInterpolation.ExponentialEaseOut or nil
+        for pos = 1, #displayOrder do
+            local idx = displayOrder[pos]
+            local essFrame = bar.FragmentedPowerBars[idx]
+            local essText = bar.FragmentedPowerBarTexts[idx]
+            local state = stateList[idx]
+
+            if essFrame then
+                essFrame:ClearAllPoints()
+                essFrame:SetSize(fragmentedBarWidth, barHeight)
+                essFrame:SetPoint("LEFT", bar, "LEFT", (pos - 1) * fragmentedBarWidth, 0)
+
+                essFrame:SetMinMaxValues(0, 1)
+
+                if state == "full" then
+                    essFrame:Hide()
+                    essFrame:SetValue(1, interpolation)
+                    essFrame:SetStatusBarColor(color.r, color.g, color.b, color.a or 1)
+                    essText:SetText("")
+                elseif state == "partial" then
+                    essFrame:Show()
+                    local remaining = math.max(0, bar._NextEssenceTick - now)
+                    local value = 1 - (remaining / tickDuration)
+                    essFrame:SetValue(value, interpolation)
+                    essFrame:SetStatusBarColor(color.r * 0.5, color.g * 0.5, color.b * 0.5, color.a or 1)
+                    if cfg.showFragmentedPowerBarText then
+                        essText:SetText(string.format("%." .. (precision or 1) .. "f", remaining))
+                    else
+                        essText:SetText("")
+                    end
+                else
+                    essFrame:Show()
+                    essFrame:SetValue(0, interpolation)
+                    essFrame:SetStatusBarColor(color.r * 0.5, color.g * 0.5, color.b * 0.5, color.a or 1)
+                    essText:SetText("")
+                end
+            end
+        end
+    elseif resource == Enum.PowerType.Runes then
         -- Collect rune states: ready and recharging
         local readyList = {}
         local cdList = {}
         local now = GetTime()
-        
         for i = 1, maxPower do
             local start, duration, runeReady = GetRuneCooldown(i)
             if runeReady then
@@ -266,26 +320,28 @@ function ResourceBars:UpdateFragmentedPowerDisplay(bar, resource)
             end
         end
 
-        -- Sort cdList by ascending remaining time
+        -- Sort cdList by ascending remaining time (least remaining on the left of the CD group)
         table.sort(cdList, function(a, b)
             return a.remaining < b.remaining
         end)
 
-        -- Build final display order: ready runes first, then CD runes sorted
+        -- Build final display order: ready runes first (left), then CD runes sorted by remaining
         local displayOrder = {}
         local readyLookup = {}
         local cdLookup = {}
-        
         for _, v in ipairs(readyList) do
             table.insert(displayOrder, v.index)
             readyLookup[v.index] = true
         end
-        
         for _, v in ipairs(cdList) do
             table.insert(displayOrder, v.index)
             cdLookup[v.index] = v
         end
 
+        bar.StatusBar:SetValue(#readyList)
+
+        local precision = (cfg.fragmentedPowerBarTextPrecision and math.max(0, string.len(cfg.fragmentedPowerBarTextPrecision) - 3)) or 0
+        local interpolation = cfg.smoothProgress and buildVersion >= 120000 and Enum.StatusBarInterpolation.ExponentialEaseOut or nil
         for pos = 1, #displayOrder do
             local runeIndex = displayOrder[pos]
             local runeFrame = bar.FragmentedPowerBars[runeIndex]
@@ -293,98 +349,41 @@ function ResourceBars:UpdateFragmentedPowerDisplay(bar, resource)
 
             if runeFrame then
                 runeFrame:ClearAllPoints()
-                -- Calculate position using whole pixel widths for pixel-perfect alignment
-                local runeX = (pos - 1) * baseFragmentedBarWidth
-                -- Calculate width: last rune gets remaining width to fill the bar completely
-                local runeWidth = (pos == #displayOrder) and (baseFragmentedBarWidth + remainingWidth) or baseFragmentedBarWidth
-                -- barHeight is already in pixels (from bar:GetHeight()), no need to scale
-                runeFrame:SetSize(runeWidth, barHeight)
-                runeFrame:SetPoint("LEFT", bar, "LEFT", runeX, 0)
+                runeFrame:SetSize(fragmentedBarWidth, barHeight)
+                runeFrame:SetPoint("LEFT", bar, "LEFT", (pos - 1) * fragmentedBarWidth, 0)
 
-                -- Update rune timer text position and font size
-                if runeText then
-                    runeText:ClearAllPoints()
-                    runeText:SetPoint("TOP", runeFrame, "TOP", NephUI:Scale(cfg.runeTimerTextX or 0), NephUI:Scale(cfg.runeTimerTextY or 0))
-                    runeText:SetFont(NephUI:GetGlobalFont(), cfg.runeTimerTextSize or 10, "OUTLINE")
-                    runeText:SetShadowOffset(0, 0)
-                end
-
-                local alpha = color.a or 1
+                runeFrame:SetMinMaxValues(0, 1)
                 if readyLookup[runeIndex] then
-                    -- Ready rune
-                    runeFrame:SetMinMaxValues(0, 1)
-                    runeFrame:SetValue(1)
+                    runeFrame:Hide()
+                    runeFrame:SetValue(1, interpolation)
                     runeText:SetText("")
-                    runeFrame:SetStatusBarColor(color.r, color.g, color.b, alpha)
+                    runeFrame:SetStatusBarColor(color.r, color.g, color.b, color.a or 1)
                 else
-                    -- Recharging rune
+                    runeFrame:Show()
                     local cdInfo = cdLookup[runeIndex]
+                    runeFrame:SetStatusBarColor(color.r * 0.5, color.g * 0.5, color.b * 0.5, color.a or 1)
                     if cdInfo then
-                        runeFrame:SetMinMaxValues(0, 1)
-                        runeFrame:SetValue(cdInfo.frac)
-                        
-                        -- Only show timer text if enabled
-                        if cfg.showFragmentedPowerBarText ~= false then
-                            runeText:SetText(string.format("%.1f", math.max(0, cdInfo.remaining)))
+                        runeFrame:SetValue(cdInfo.frac, interpolation)
+                        if cfg.showFragmentedPowerBarText then
+                            runeText:SetText(string.format("%." .. (precision or 1) .. "f", math.max(0, cdInfo.remaining)))
                         else
                             runeText:SetText("")
                         end
-                        
-                        runeFrame:SetStatusBarColor(color.r * 0.5, color.g * 0.5, color.b * 0.5, alpha)
                     else
-                        runeFrame:SetMinMaxValues(0, 1)
-                        runeFrame:SetValue(0)
+                        runeFrame:SetValue(0, interpolation)
                         runeText:SetText("")
-                        runeFrame:SetStatusBarColor(color.r * 0.5, color.g * 0.5, color.b * 0.5, alpha)
                     end
                 end
-
-                runeFrame:Show()
             end
         end
+    end
 
-        -- Hide any extra rune frames beyond current maxPower
-        for i = maxPower + 1, #bar.FragmentedPowerBars do
-            if bar.FragmentedPowerBars[i] then
-                bar.FragmentedPowerBars[i]:Hide()
-                if bar.FragmentedPowerBarTexts[i] then
-                    bar.FragmentedPowerBarTexts[i]:SetText("")
-                end
-            end
-        end
-        
-        -- Add ticks between rune segments if enabled
-        if cfg.showTicks then
-            for i = 1, maxPower - 1 do
-                local tick = bar.ticks[i]
-                if not tick then
-                    tick = bar.TicksFrame:CreateTexture(nil, "OVERLAY")
-                    tick:SetColorTexture(0, 0, 0, 1)
-                    bar.ticks[i] = tick
-                end
-                
-                -- Calculate tick position using whole pixel widths for pixel-perfect alignment
-                -- Position tick at the boundary between runes (i * baseFragmentedBarWidth)
-                local tickX = i * baseFragmentedBarWidth
-                tick:ClearAllPoints()
-                tick:SetPoint("LEFT", bar, "LEFT", tickX, 0)
-                -- Ensure tick width is at least 1 pixel to prevent disappearing
-                local tickWidth = math.max(1, NephUI:Scale(1))
-                -- barHeight is already in pixels (from bar:GetHeight()), no need to scale
-                tick:SetSize(tickWidth, barHeight)
-                tick:Show()
-            end
-            
-            -- Hide extra ticks
-            for i = maxPower, #bar.ticks do
-                if bar.ticks[i] then
-                    bar.ticks[i]:Hide()
-                end
-            end
-        else
-            -- Hide all ticks if disabled
-            for _, tick in ipairs(bar.ticks) do
-                tick:Hide()
+    -- Hide extra fragmented power bars beyond current maxPower
+    for i = maxPower + 1, #bar.FragmentedPowerBars do
+        if bar.FragmentedPowerBars[i] then
+            bar.FragmentedPowerBars[i]:Hide()
+            if bar.FragmentedPowerBarTexts[i] then
+                bar.FragmentedPowerBarTexts[i]:SetText("")
             end
         end
     end
@@ -398,8 +397,8 @@ function ResourceBars:UpdateSecondaryPowerBarTicks(bar, resource, max)
         tick:Hide()
     end
 
-    -- Don't show ticks if disabled, not a ticked power type, or if it's fragmented
-    if not cfg.showTicks or not tickedPowerTypes[resource] or fragmentedPowerTypes[resource] then
+    -- Don't show ticks if disabled or not a ticked power type
+    if not cfg.showTicks or not tickedPowerTypes[resource] then
         return
     end
 
@@ -440,12 +439,29 @@ end
 function ResourceBars:UpdateSecondaryPowerBar()
     local cfg = NephUI.db.profile.secondaryPowerBar
     if not cfg.enabled then
-        if NephUI.secondaryPowerBar then NephUI.secondaryPowerBar:Hide() end
+        if NephUI.secondaryPowerBar then
+            NephUI.secondaryPowerBar:Hide()
+            NephUI.secondaryPowerBar:SetScript("OnUpdate", nil)
+        end
         return
     end
 
-    -- Track stagger percentage for dynamic color changes
+    -- Setup/teardown OnUpdate ticker for faster updates
     local bar = self:GetSecondaryPowerBar()
+    if cfg.fasterUpdates then
+        local updateFrequency = cfg.updateFrequency or 0.1
+        bar:SetScript("OnUpdate", function(frame, elapsed)
+            frame._updateElapsed = (frame._updateElapsed or 0) + elapsed
+            if frame._updateElapsed >= updateFrequency then
+                frame._updateElapsed = 0
+                ResourceBars:UpdateSecondaryPowerBar()
+            end
+        end)
+    else
+        bar:SetScript("OnUpdate", nil)
+    end
+
+    -- Track stagger percentage for dynamic color changes
     local resource = GetSecondaryResource()
     if resource == "STAGGER" then
         local stagger = UnitStagger("player") or 0
@@ -570,14 +586,9 @@ function ResourceBars:UpdateSecondaryPowerBar()
         return
     end
 
-    -- Handle fragmented power types (Runes)
+    -- Handle fragmented power types (Runes, Essence)
     if fragmentedPowerTypes[resource] then
-        self:CreateFragmentedPowerBars(bar, resource)
-        self:UpdateFragmentedPowerDisplay(bar, resource)
-
-        bar.StatusBar:SetMinMaxValues(0, max)
-        bar.StatusBar:SetValue(current)
-
+        -- Set StatusBar color first so UpdateFragmentedPowerDisplay can read it
         local powerTypeColors = NephUI.db.profile.powerTypeColors
         if powerTypeColors.useClassColor then
             -- Class color for all resources
@@ -598,13 +609,25 @@ function ResourceBars:UpdateSecondaryPowerBar()
             local color = GetResourceColor(resource)
             bar.StatusBar:SetStatusBarColor(color.r, color.g, color.b)
         end
+        
+        -- Set StatusBar min/max and value first
+        local interpolation = cfg.smoothProgress and buildVersion >= 120000 and Enum.StatusBarInterpolation.ExponentialEaseOut or nil
+        bar.StatusBar:SetMinMaxValues(0, max, interpolation)
+        bar.StatusBar:SetValue(current, interpolation)
+        
+        self:CreateFragmentedPowerBars(bar, resource)
+        self:UpdateFragmentedPowerDisplay(bar, resource)
+        
+        -- Update ticks for fragmented resources
+        self:UpdateSecondaryPowerBarTicks(bar, resource, max)
 
         bar.TextValue:SetText(tostring(current))
     else
         -- Normal bar display
         bar.StatusBar:SetAlpha(1)
-        bar.StatusBar:SetMinMaxValues(0, max)
-        bar.StatusBar:SetValue(current)
+        local interpolation = cfg.smoothProgress and buildVersion >= 120000 and Enum.StatusBarInterpolation.ExponentialEaseOut or nil
+        bar.StatusBar:SetMinMaxValues(0, max, interpolation)
+        bar.StatusBar:SetValue(current, interpolation)
 
         -- Set bar color
         local powerTypeColors = NephUI.db.profile.powerTypeColors

@@ -49,6 +49,7 @@ local tickedPowerTypes = {
 
 local fragmentedPowerTypes = {
     [Enum.PowerType.Runes] = true,
+    [Enum.PowerType.Essence] = true,
 }
 
 -- Export tables for use in other ResourceBars files
@@ -56,6 +57,7 @@ NephUI.ResourceBars = NephUI.ResourceBars or {}
 NephUI.ResourceBars.tickedPowerTypes = tickedPowerTypes
 NephUI.ResourceBars.fragmentedPowerTypes = fragmentedPowerTypes
 NephUI.ResourceBars.HAS_UNIT_POWER_PERCENT = HAS_UNIT_POWER_PERCENT
+NephUI.ResourceBars.buildVersion = buildVersion
 
 -- RESOURCE DETECTION
 
@@ -262,44 +264,6 @@ local function GetResourceColor(resource)
         or GetPowerBarColor("MANA")
 end
 
--- DEMON HUNTER SOUL FRAGMENTS BAR HANDLING
-
-local function EnsureDemonHunterSoulBar()
-    -- Ensure the Demon Hunter soul fragments bar is always shown and functional
-    -- This is needed even when custom unit frames are enabled
-    local _, class = UnitClass("player")
-    if class ~= "DEMONHUNTER" then return end
-    
-    local spec = GetSpecialization()
-    if spec ~= 3 then return end -- Only for spec 3 (Aldrachi Reaver)
-    
-    local soulBar = _G["DemonHunterSoulFragmentsBar"]
-    if soulBar then
-        -- Reparent to UIParent if not already (so it's not affected by PlayerFrame)
-        if soulBar:GetParent() ~= UIParent then
-            if not InCombatLockdown() then
-                soulBar:SetParent(UIParent)
-            end
-        end
-        -- Ensure it's shown (even if PlayerFrame is hidden)
-        if not soulBar:IsShown() then
-            soulBar:Show()
-            soulBar:SetAlpha(0)
-        end
-        -- Unhook any hide scripts that might prevent it from showing
-        if not InCombatLockdown() then
-            soulBar:SetScript("OnShow", nil)
-            -- Set OnHide to immediately show it again
-            soulBar:SetScript("OnHide", function(self)
-                if not InCombatLockdown() then
-                    self:Show()
-                    self:SetAlpha(0)
-                end
-            end)
-        end
-    end
-end
-
 -- GET RESOURCE VALUES
 
 local function GetPrimaryResourceValue(resource, cfg)
@@ -337,12 +301,6 @@ local function GetSecondaryResourceValue(resource, cfg)
         local soulBar = _G["DemonHunterSoulFragmentsBar"]
         if not soulBar then return nil, nil, nil, nil, nil end
 
-        -- Ensure the bar is shown (even if PlayerFrame is hidden)
-        if not soulBar:IsShown() then
-            soulBar:Show()
-            soulBar:SetAlpha(0)
-        end
-
         local current = soulBar:GetValue()
         local _, max = soulBar:GetMinMaxValues()
 
@@ -351,29 +309,11 @@ local function GetSecondaryResourceValue(resource, cfg)
 
     if resource == "MAELSTROM_WEAPON" then
         -- Enhancement Shaman Maelstrom Weapon buff tracking
-        local spellID = 344179
+        local auraData = C_UnitAuras.GetPlayerAuraBySpellID(344179) -- Maelstrom Weapon
+        local current = auraData and auraData.applications or 0
+        local max = 10
 
-        -- Check if WoW API is available
-        if not C_UnitAuras or not C_UnitAuras.GetAuraDataByIndex then
-            return 10, 10, 0, 0, "number"
-        end
-
-        -- Iterate through all buffs to find maelstrom weapon
-        local current = 0
-        local i = 1
-        while true do
-            local auraData = C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL")
-            if not auraData then break end
-
-            if auraData.spellId == spellID then
-                current = auraData.applications or 0
-                break
-            end
-            i = i + 1
-            if i > 50 then break end -- Safety limit
-        end
-
-        return 10, 10, current, current, "number"
+        return max, max, current, current, "number"
     end
 
     if resource == Enum.PowerType.Runes then
@@ -427,7 +367,6 @@ end
 NephUI.ResourceBars.GetPrimaryResource = GetPrimaryResource
 NephUI.ResourceBars.GetSecondaryResource = GetSecondaryResource
 NephUI.ResourceBars.GetResourceColor = GetResourceColor
-NephUI.ResourceBars.EnsureDemonHunterSoulBar = EnsureDemonHunterSoulBar
 NephUI.ResourceBars.GetPrimaryResourceValue = GetPrimaryResourceValue
 NephUI.ResourceBars.GetSecondaryResourceValue = GetSecondaryResourceValue
 NephUI.ResourceBars.GetChargedPowerPoints = GetChargedPowerPoints

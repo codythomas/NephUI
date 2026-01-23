@@ -176,10 +176,70 @@ local function UpdateStatusIndicators(unitFrame, DB)
     end
 end
 
+-- Update raid target icon
+local function UpdateRaidTargetIcon(unitFrame, unit, DB)
+    if not unitFrame or not unit or not unitFrame.raidTargetIcon then return end
+    if not DB or not DB.RaidTargetIcon then return end
+    
+    local RaidTargetDB = DB.RaidTargetIcon
+    
+    -- Check if enabled
+    if not RaidTargetDB.Enabled then
+        unitFrame.raidTargetIcon:Hide()
+        return
+    end
+    
+    local index = GetRaidTargetIndex(unit)
+    
+    if index then
+        -- Ensure texture is set
+        unitFrame.raidTargetIcon.texture:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons")
+        SetRaidTargetIconTexture(unitFrame.raidTargetIcon.texture, index)
+        unitFrame.raidTargetIcon:Show()
+    else
+        unitFrame.raidTargetIcon:Hide()
+        return
+    end
+    
+    -- Apply positioning
+    local scale = RaidTargetDB.Scale or 1.0
+    local anchorFrom = RaidTargetDB.AnchorFrom or "TOP"
+    local anchorTo = RaidTargetDB.AnchorTo or "TOP"
+    local x = RaidTargetDB.OffsetX or 0
+    local y = RaidTargetDB.OffsetY or 2
+    
+    local size = 16 * scale
+    unitFrame.raidTargetIcon:SetSize(size, size)
+    unitFrame.raidTargetIcon:ClearAllPoints()
+    unitFrame.raidTargetIcon:SetPoint(anchorFrom, unitFrame, anchorTo, x, y)
+    
+    -- Apply frame level
+    local frameLevel = RaidTargetDB.FrameLevel or 0
+    if frameLevel > 0 then
+        unitFrame.raidTargetIcon:SetFrameLevel(unitFrame:GetFrameLevel() + frameLevel)
+    end
+end
+
 -- Update unit frame event handler
 local function UpdateUnitFrame(self, event, eventUnit, ...)
     local unit = self.unit
     if not unit or not UnitExists(unit) then return end
+    
+    -- Handle RAID_TARGET_UPDATE event (player, target, focus, boss)
+    if event == "RAID_TARGET_UPDATE" then
+        if unit == "player" or unit == "target" or unit == "focus" or unit:match("^boss%d+$") then
+            local db = NephUI.db.profile.unitFrames
+            if db then
+                local dbUnit = unit
+                if unit:match("^boss%d+$") then dbUnit = "boss" end
+                local DB = db[dbUnit]
+                if DB then
+                    UpdateRaidTargetIcon(self, unit, DB)
+                end
+            end
+        end
+        return
+    end
     
     -- Handle UNIT_AURA events for player, focus, target, and boss frames
     if event == "UNIT_AURA" then
@@ -366,6 +426,11 @@ local function UpdateUnitFrame(self, event, eventUnit, ...)
         UpdateStatusIndicators(self, DB)
     end
     
+    -- Update raid target icon (player, target, focus, boss)
+    if (unit == "player" or unit == "target" or unit == "focus" or unit:match("^boss%d+$")) and DB.RaidTargetIcon then
+        UpdateRaidTargetIcon(self, unit, DB)
+    end
+    
     -- Update unit auras if this is a player, focus, target, or boss frame (always update, not just on specific events)
     if (unit == "player" or unit == "focus" or unit == "target" or unit:match("^boss%d+$")) and UpdateUnitAuras then
         UpdateUnitAuras(self)
@@ -394,11 +459,12 @@ function UF:UpdateUnitFrame(unit)
     if not unitFrame then return end
     
     local shouldHideUnitFrame = (not DB.Enabled)
+    local inCombat = InCombatLockdown()
 
     if shouldHideUnitFrame then
         unitFrame:Hide()
         unitFrame:UnregisterAllEvents()
-        if unitFrame.__nephuiUnitWatchActive then
+        if unitFrame.__nephuiUnitWatchActive and not inCombat then
             UnregisterUnitWatch(unitFrame)
             unitFrame.__nephuiUnitWatchActive = nil
         end
@@ -409,14 +475,18 @@ function UF:UpdateUnitFrame(unit)
     else
         if unit:match("^boss%d+$") and NephUI.UnitFrames.BossPreviewMode then
             -- In boss preview mode, unregister unit watch and force show
-            UnregisterUnitWatch(unitFrame)
-            unitFrame.__nephuiUnitWatchActive = false
+            if not inCombat then
+                UnregisterUnitWatch(unitFrame)
+                unitFrame.__nephuiUnitWatchActive = false
+            end
             unitFrame:Show()
         else
             -- Normal mode: ensure unit watch is active
-            UnregisterUnitWatch(unitFrame)
-            RegisterUnitWatch(unitFrame, false)
-            unitFrame.__nephuiUnitWatchActive = true
+            if not inCombat then
+                UnregisterUnitWatch(unitFrame)
+                RegisterUnitWatch(unitFrame, false)
+                unitFrame.__nephuiUnitWatchActive = true
+            end
             -- Don't force show - let UnitWatch handle visibility
         end
     end
@@ -650,6 +720,10 @@ function UF:UpdateUnitFrame(unit)
             unitFrame:RegisterEvent("UNIT_POWER_UPDATE")
             unitFrame:RegisterEvent("UNIT_MAXPOWER")
         end
+        -- Register raid target update event (player, target, focus, boss)
+        if unit == "player" or unit == "target" or unit == "focus" or unit:match("^boss%d+$") then
+            unitFrame:RegisterEvent("RAID_TARGET_UPDATE")
+        end
         -- Register UNIT_AURA for target and boss frames to update auras
         if unit == "target" or unit:match("^boss%d+$") then
             unitFrame:RegisterEvent("UNIT_AURA")
@@ -713,6 +787,23 @@ function UF:UpdateUnitFrame(unit)
     -- Update status indicators (player frame only)
     if unit == "player" and DB.StatusIndicators then
         UpdateStatusIndicators(unitFrame, DB)
+    end
+    
+    -- Update raid target icon (player, target, focus, boss)
+    if (unit == "player" or unit == "target" or unit == "focus" or unit:match("^boss%d+$")) and DB.RaidTargetIcon then
+        local RaidTargetDB = DB.RaidTargetIcon
+        if not unitFrame.raidTargetIcon then
+            -- Create frame and texture
+            local raidTargetFrame = CreateFrame("Frame", nil, unitFrame)
+            raidTargetFrame:SetFrameLevel(unitFrame:GetFrameLevel() + 5)
+            local raidTargetTexture = raidTargetFrame:CreateTexture(nil, "OVERLAY")
+            raidTargetTexture:SetAllPoints()
+            raidTargetTexture:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons")
+            raidTargetTexture:SetDrawLayer("OVERLAY", 6)
+            unitFrame.raidTargetIcon = raidTargetFrame
+            unitFrame.raidTargetIcon.texture = raidTargetTexture
+        end
+        UpdateRaidTargetIcon(unitFrame, unit, DB)
     end
     
     -- Initial update

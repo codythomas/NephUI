@@ -40,12 +40,9 @@ local function HideEditModeSelectionFrame(selectionFrame)
 end
 
 function UF:HideDefaultUnitFrames()
-    -- Make PlayerFrame clickthrough for all classes; mask it for non-evokers
-    local _, playerClass = UnitClass("player")
+    -- Make PlayerFrame clickthrough for all classes; mask it (always hide Blizzard PlayerFrame when NephUI Player is enabled)
     MakePlayerFrameClickthrough()
-    if playerClass ~= "EVOKER" then
-        MaskFrame(PlayerFrame)
-    end
+    MaskFrame(PlayerFrame)
     
     MaskFrame(TargetFrame)
     MaskFrame(FocusFrame)

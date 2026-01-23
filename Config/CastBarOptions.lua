@@ -263,6 +263,166 @@ local function CreateCastBarOptions()
                             NephUI:UpdateCastBarLayout()
                         end,
                     },
+                    empoweredHeader = {
+                        type = "header",
+                        name = "Empowered Cast Settings",
+                        order = 28,
+                    },
+                    showEmpoweredTicks = {
+                        type = "toggle",
+                        name = "Show Empowered Cast Ticks",
+                        desc = "Show tick marks on empowered casts to indicate stage boundaries",
+                        order = 29,
+                        width = "normal",
+                        get = function() 
+                            local val = NephUI.db.profile.castBar.showEmpoweredTicks
+                            return val ~= false  -- Default to true if nil
+                        end,
+                        set = function(_, val)
+                            NephUI.db.profile.castBar.showEmpoweredTicks = val
+                            -- Reinitialize empowered stages if currently showing an empowered cast
+                            if NephUI.castBar and NephUI.castBar.isEmpowered and NephUI.castBar.numStages and NephUI.castBar.numStages > 0 then
+                                if NephUI.CastBars and NephUI.CastBars.InitializeEmpoweredStages then
+                                    -- Force reinitialize to apply the setting change
+                                    C_Timer.After(0.01, function()
+                                        if NephUI.castBar and NephUI.castBar.isEmpowered then
+                                            NephUI.CastBars:InitializeEmpoweredStages(NephUI.castBar)
+                                        end
+                                    end)
+                                end
+                            end
+                        end,
+                    },
+                    showEmpoweredStageColors = {
+                        type = "toggle",
+                        name = "Show Empowered Stage Colors",
+                        desc = "Show colored backgrounds and foregrounds for each stage. Disable to only show ticks.",
+                        order = 29.5,
+                        width = "normal",
+                        get = function() 
+                            local val = NephUI.db.profile.castBar.showEmpoweredStageColors
+                            return val ~= false  -- Default to true if nil
+                        end,
+                        set = function(_, val)
+                            NephUI.db.profile.castBar.showEmpoweredStageColors = val
+                            -- Reinitialize empowered stages if currently showing an empowered cast
+                            if NephUI.castBar and NephUI.castBar.isEmpowered and NephUI.castBar.numStages and NephUI.castBar.numStages > 0 then
+                                if NephUI.CastBars and NephUI.CastBars.InitializeEmpoweredStages then
+                                    -- Force reinitialize to apply the setting change
+                                    C_Timer.After(0.01, function()
+                                        if NephUI.castBar and NephUI.castBar.isEmpowered then
+                                            NephUI.CastBars:InitializeEmpoweredStages(NephUI.castBar)
+                                        end
+                                    end)
+                                end
+                            end
+                        end,
+                    },
+                    empoweredStage1Color = {
+                        type = "color",
+                        name = "Stage 1 Color",
+                        desc = "Background and foreground color for stage 1 of empowered casts",
+                        order = 30,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.castBar.empoweredStageColors and NephUI.db.profile.castBar.empoweredStageColors[1]
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 0.3, 0.75, 1, 1
+                        end,
+                        set = function(_, r, g, b, a)
+                            if not NephUI.db.profile.castBar.empoweredStageColors then
+                                NephUI.db.profile.castBar.empoweredStageColors = {}
+                            end
+                            NephUI.db.profile.castBar.empoweredStageColors[1] = { r, g, b, a or 1 }
+                        end,
+                    },
+                    empoweredStage2Color = {
+                        type = "color",
+                        name = "Stage 2 Color",
+                        desc = "Background and foreground color for stage 2 of empowered casts",
+                        order = 31,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.castBar.empoweredStageColors and NephUI.db.profile.castBar.empoweredStageColors[2]
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 0.4, 1, 0.4, 1
+                        end,
+                        set = function(_, r, g, b, a)
+                            if not NephUI.db.profile.castBar.empoweredStageColors then
+                                NephUI.db.profile.castBar.empoweredStageColors = {}
+                            end
+                            NephUI.db.profile.castBar.empoweredStageColors[2] = { r, g, b, a or 1 }
+                        end,
+                    },
+                    empoweredStage3Color = {
+                        type = "color",
+                        name = "Stage 3 Color",
+                        desc = "Background and foreground color for stage 3 of empowered casts",
+                        order = 32,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.castBar.empoweredStageColors and NephUI.db.profile.castBar.empoweredStageColors[3]
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 1, 0.85, 0, 1
+                        end,
+                        set = function(_, r, g, b, a)
+                            if not NephUI.db.profile.castBar.empoweredStageColors then
+                                NephUI.db.profile.castBar.empoweredStageColors = {}
+                            end
+                            NephUI.db.profile.castBar.empoweredStageColors[3] = { r, g, b, a or 1 }
+                        end,
+                    },
+                    empoweredStage4Color = {
+                        type = "color",
+                        name = "Stage 4 Color",
+                        desc = "Background and foreground color for stage 4 of empowered casts",
+                        order = 33,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.castBar.empoweredStageColors and NephUI.db.profile.castBar.empoweredStageColors[4]
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 1, 0.5, 0, 1
+                        end,
+                        set = function(_, r, g, b, a)
+                            if not NephUI.db.profile.castBar.empoweredStageColors then
+                                NephUI.db.profile.castBar.empoweredStageColors = {}
+                            end
+                            NephUI.db.profile.castBar.empoweredStageColors[4] = { r, g, b, a or 1 }
+                        end,
+                    },
+                    empoweredStage5Color = {
+                        type = "color",
+                        name = "Stage 5 Color",
+                        desc = "Background and foreground color for stage 5 of empowered casts",
+                        order = 34,
+                        width = "normal",
+                        hasAlpha = true,
+                        get = function()
+                            local c = NephUI.db.profile.castBar.empoweredStageColors and NephUI.db.profile.castBar.empoweredStageColors[5]
+                            if c then
+                                return c[1], c[2], c[3], c[4] or 1
+                            end
+                            return 1, 0.2, 0.2, 1
+                        end,
+                        set = function(_, r, g, b, a)
+                            if not NephUI.db.profile.castBar.empoweredStageColors then
+                                NephUI.db.profile.castBar.empoweredStageColors = {}
+                            end
+                            NephUI.db.profile.castBar.empoweredStageColors[5] = { r, g, b, a or 1 }
+                        end,
+                    },
                 },
             },
             target = {

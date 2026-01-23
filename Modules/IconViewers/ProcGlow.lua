@@ -8,7 +8,10 @@ local ProcGlow = NephUI.ProcGlow
 local LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
 
 -- Track which icons currently have active glows
-local activeGlowIcons = {}  -- [icon] = true
+local activeGlowingIcons = {}  -- [icon] = true
+
+-- Glow key for LibCustomGlow
+local GLOW_KEY = "_NephUICustomGlow"
 
 -- LibCustomGlow glow types
 ProcGlow.LibCustomGlowTypes = {
@@ -18,35 +21,28 @@ ProcGlow.LibCustomGlowTypes = {
     "Proc Glow",
 }
 
--- Try to find the icon texture attached to the button
-local function GetButtonIconTexture(button)
-    if not button then return nil end
-
-    local icon = button.icon or button.Icon or button.IconTexture
-    if icon and icon.GetObjectType and icon:GetObjectType() == "Texture" then
-        return icon
-    end
-
-    local buttonName = button.GetName and button:GetName()
-    if buttonName then
-        local namedIcon = _G[buttonName .. "Icon"] or _G[buttonName .. "IconTexture"]
-        if namedIcon then
-            return namedIcon
-        end
-    end
-
-    if button.GetRegions then
-        for _, region in ipairs({button:GetRegions()}) do
-            if region and region.GetObjectType and region:GetObjectType() == "Texture" then
-                local regionName = region:GetName()
-                if not regionName or regionName:find("Icon") then
-                    return region
+-- Check if a button belongs to one of our cooldown viewer frames
+local function IsCooldownViewerIcon(button)
+    if not button then return false end
+    local currentParent = button
+    for _ = 1, 6 do
+        currentParent = currentParent:GetParent()
+        if not currentParent then return false end
+        local parentName = currentParent:GetName()
+        if parentName then
+            local viewers = NephUI.viewers or {
+                "EssentialCooldownViewer",
+                "UtilityCooldownViewer",
+                "BuffIconCooldownViewer",
+            }
+            for _, viewerName in ipairs(viewers) do
+                if parentName == viewerName then
+                    return true
                 end
             end
         end
     end
-
-    return nil
+    return false
 end
 
 -- Get settings for proc glow (viewers only)
@@ -56,216 +52,137 @@ local function GetProcGlowSettings()
     return settings
 end
 
--- Apply LibCustomGlow effects
-local function ApplyLibCustomGlow(icon, settings)
-    if not LCG then return false end
-    if not icon then return false end
-    
-    local glowType = settings.glowType or "Pixel Glow"
-    local color = settings.loopColor or {0.95, 0.95, 0.32, 1}
-    -- Ensure color has alpha
-    if not color[4] then
-        color[4] = 1
+-- Hide Blizzard's glow effects (like BetterCooldownManager)
+local function HideBlizzardGlow(iconFrame)
+    if iconFrame.SpellActivationAlert then
+        iconFrame.SpellActivationAlert:Hide()
+        if iconFrame.SpellActivationAlert.ProcLoopFlipbook then
+            iconFrame.SpellActivationAlert.ProcLoopFlipbook:Hide()
+        end
+        if iconFrame.SpellActivationAlert.ProcStartFlipbook then
+            iconFrame.SpellActivationAlert.ProcStartFlipbook:Hide()
+        end
     end
-    local lines = settings.lcgLines or 14
-    local frequency = settings.lcgFrequency or 0.25
-    local thickness = settings.lcgThickness or 2
 
-    -- Get the icon texture for anchoring (like ActionBarGlow does)
-    local iconTexture = GetButtonIconTexture(icon)
-    
-    -- Use viewer glow key
-    local glowKey = "_NephUICustomGlow"
-    
-    -- Stop any existing glow first
-    ProcGlow:StopGlow(icon)
-    
-    -- Hide Blizzard's glow
-    local region = icon.SpellActivationAlert
-    if region then
-        if region.ProcLoopFlipbook then
-            region.ProcLoopFlipbook:Hide()
-        end
-        if region.ProcStartFlipbook then
-            region.ProcStartFlipbook:Hide()
-        end
+    if iconFrame.overlay then iconFrame.overlay:Hide() end
+    if iconFrame.Overlay then iconFrame.Overlay:Hide() end
+    if iconFrame.Glow then iconFrame.Glow:Hide() end
+end
+
+-- Start glow on an icon (like BetterCooldownManager's StartGlow)
+local function StartGlow(iconFrame)
+    if iconFrame._NephUICustomGlowActive then return end
+
+    local glowSettings = GetProcGlowSettings()
+    if not glowSettings then return end
+
+    local glowType = glowSettings.glowType or "Pixel Glow"
+    local color = glowSettings.loopColor or {0.95, 0.95, 0.32, 1}
+    if not color[4] then color[4] = 1 end
+
+    -- Stop any existing glows first
+    if LCG then
+        LCG.PixelGlow_Stop(iconFrame, GLOW_KEY)
+        LCG.AutoCastGlow_Stop(iconFrame, GLOW_KEY)
+        LCG.ProcGlow_Stop(iconFrame, GLOW_KEY)
+        LCG.ButtonGlow_Stop(iconFrame)
     end
-    
+
     if glowType == "Pixel Glow" then
-        LCG.PixelGlow_Start(icon, color, lines, frequency, nil, thickness, 0, 0, true, glowKey)
-        local glowFrame = icon["_PixelGlow" .. glowKey]
-        if glowFrame then
-            -- Anchor glow frame to icon texture like ActionBarGlow does
-            local target = iconTexture or icon
-            glowFrame:ClearAllPoints()
-            glowFrame:SetPoint("TOPLEFT", target, "TOPLEFT", 0, 0)
-            glowFrame:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", 0, 0)
+        local lines = glowSettings.lcgLines or 14
+        local frequency = glowSettings.lcgFrequency or 0.25
+        local thickness = glowSettings.lcgThickness or 2
+        local xOffset = glowSettings.xOffset or 0
+        local yOffset = glowSettings.yOffset or 0
+        
+        if LCG then
+            LCG.PixelGlow_Start(
+                iconFrame,
+                color,
+                lines,
+                frequency,
+                nil,
+                thickness,
+                xOffset,
+                yOffset,
+                true,
+                GLOW_KEY
+            )
         end
     elseif glowType == "Autocast Shine" then
-        LCG.AutoCastGlow_Start(icon, color, lines, frequency, 1, 0, 0, glowKey)
-        local glowFrame = icon["_AutoCastGlow" .. glowKey]
-        if glowFrame then
-            -- Anchor glow frame to icon texture like ActionBarGlow does
-            local target = iconTexture or icon
-            glowFrame:ClearAllPoints()
-            glowFrame:SetPoint("TOPLEFT", target, "TOPLEFT", 0, 0)
-            glowFrame:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", 0, 0)
+        local particles = glowSettings.lcgLines or 14
+        local frequency = glowSettings.lcgFrequency or 0.25
+        local scale = glowSettings.lcgScale or 1
+        local xOffset = glowSettings.xOffset or 0
+        local yOffset = glowSettings.yOffset or 0
+        
+        if LCG then
+            LCG.AutoCastGlow_Start(
+                iconFrame,
+                color,
+                particles,
+                frequency,
+                scale,
+                xOffset,
+                yOffset,
+                GLOW_KEY
+            )
         end
     elseif glowType == "Action Button Glow" then
-        LCG.ButtonGlow_Start(icon, color, frequency)
-    elseif glowType == "Proc Glow" then
-        LCG.ProcGlow_Start(icon, {
-            color = color,
-            startAnim = true,
-            xOffset = 0,
-            yOffset = 0,
-            key = glowKey
-        })
-    end
-    
-    -- Flag that we have a custom glow active
-    icon._NephUICustomGlowActive = true
-    activeGlowIcons[icon] = true
-    
-    return true
-end
-
--- Stop all glow effects on an icon
-function ProcGlow:StopGlow(icon)
-    if not icon then return end
-    
-    -- Stop LibCustomGlow effects (viewer key only)
-    if LCG then
-        pcall(LCG.PixelGlow_Stop, icon, "_NephUICustomGlow")
-        pcall(LCG.AutoCastGlow_Stop, icon, "_NephUICustomGlow")
-        pcall(LCG.ProcGlow_Stop, icon, "_NephUICustomGlow")
-    end
-    
-    icon._NephUICustomGlowActive = nil
-    activeGlowIcons[icon] = nil
-end
-
--- Main function to start glow on a button (viewers only)
-function ProcGlow:StartGlow(icon)
-    if not icon then return end
-    
-    -- Skip action bar buttons - they're handled by ActionBarGlow
-    local buttonName = icon:GetName() or ""
-    if buttonName:match("ActionButton") or buttonName:match("MultiBar") or 
-       buttonName:match("PetActionButton") or buttonName:match("StanceButton") then
-        return
-    end
-    
-    -- Already has our glow? Skip
-    if icon._NephUICustomGlowActive then return end
-    
-    local settings = GetProcGlowSettings()
-    if not settings then return end
-    
-    -- Always use LibCustomGlow
-    if icon:IsShown() then
-        ApplyLibCustomGlow(icon, settings)
-    end
-end
-
--- Hook function for ActionButtonSpellAlertManager:ShowAlert
-local function Hook_ShowAlert(frame, button)
-    local targetButton = button or frame
-    if not targetButton then return end
-    
-    -- Skip action bar buttons - they're handled by ActionBarGlow
-    local buttonName = targetButton:GetName() or ""
-    if buttonName:match("ActionButton") or buttonName:match("MultiBar") or 
-       buttonName:match("PetActionButton") or buttonName:match("StanceButton") then
-        return
-    end
-    
-    -- Handle different function signatures (viewers only)
-    if ProcGlow.StartGlow then
-        ProcGlow:StartGlow(targetButton)
-    end
-end
-
--- Hook into Blizzard's glow system
-local function SetupGlowHooks()
-    -- Hook ActionButton_ShowOverlayGlow - this is called when a proc happens
-    if type(ActionButton_ShowOverlayGlow) == "function" then
-        hooksecurefunc("ActionButton_ShowOverlayGlow", function(button)
-            if not button then return end
-            
-            -- Skip action bar buttons - they're handled by ActionBarGlow
-            local buttonName = button:GetName() or ""
-            if buttonName:match("ActionButton") or buttonName:match("MultiBar") or 
-               buttonName:match("PetActionButton") or buttonName:match("StanceButton") then
-                return
-            end
-            
-            -- Apply immediately (viewers only)
-            if button:IsShown() then
-                ProcGlow:StartGlow(button)
-            end
-        end)
-    end
-    
-    -- Hook ActionButton_HideOverlayGlow - this is called when proc ends
-    if type(ActionButton_HideOverlayGlow) == "function" then
-        hooksecurefunc("ActionButton_HideOverlayGlow", function(button)
-            if not button then return end
-            
-            -- Skip action bar buttons - they're handled by ActionBarGlow
-            local buttonName = button:GetName() or ""
-            if buttonName:match("ActionButton") or buttonName:match("MultiBar") or 
-               buttonName:match("PetActionButton") or buttonName:match("StanceButton") then
-                return
-            end
-            
-            ProcGlow:StopGlow(button)
-        end)
-    end
-    
-    -- Also listen for spell activation events directly
-    local eventFrame = CreateFrame("Frame")
-    eventFrame:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW")
-    eventFrame:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE")
-    eventFrame:SetScript("OnEvent", function(self, event, spellID)
-        if not spellID then return end
+        local frequency = glowSettings.lcgFrequency or 0.25
         
-        -- Find the icon with this spellID in our viewers
-        local viewers = NephUI.viewers or {
-            "EssentialCooldownViewer",
-            "UtilityCooldownViewer",
-            "BuffIconCooldownViewer",
-        }
-        
-        for _, viewerName in ipairs(viewers) do
-            local viewer = _G[viewerName]
-            if viewer then
-                local children = {viewer:GetChildren()}
-                for _, child in ipairs(children) do
-                    if child:IsShown() then
-                        -- Wrap spell ID access and comparison in pcall to handle "secret" values
-                        local matched = false
-                        pcall(function()
-                            local iconSpellID = child.spellID or child.SpellID or 
-                                               (child.GetSpellID and child:GetSpellID())
-                            if iconSpellID and iconSpellID == spellID then
-                                matched = true
-                            end
-                        end)
-                        
-                        if matched then
-                            if event == "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW" then
-                                -- Apply immediately
-                                ProcGlow:StartGlow(child)
-                            else
-                                ProcGlow:StopGlow(child)
-                            end
-                        end
-                    end
-                end
-            end
+        if LCG then
+            LCG.ButtonGlow_Start(iconFrame, color, frequency)
         end
-    end)
+    elseif glowType == "Proc Glow" then
+        if LCG then
+            LCG.ProcGlow_Start(iconFrame, {
+                color = color,
+                startAnim = false,
+                xOffset = glowSettings.xOffset or 0,
+                yOffset = glowSettings.yOffset or 0,
+                key = GLOW_KEY
+            })
+        end
+    end
+
+    iconFrame._NephUICustomGlowActive = true
+    activeGlowingIcons[iconFrame] = true
+end
+
+-- Stop glow on an icon (like BetterCooldownManager's StopGlow)
+local function StopGlow(iconFrame)
+    if not iconFrame._NephUICustomGlowActive then return end
+    
+    if LCG then
+        LCG.PixelGlow_Stop(iconFrame, GLOW_KEY)
+        LCG.AutoCastGlow_Stop(iconFrame, GLOW_KEY)
+        LCG.ProcGlow_Stop(iconFrame, GLOW_KEY)
+        LCG.ButtonGlow_Stop(iconFrame)
+    end
+    
+    iconFrame._NephUICustomGlowActive = nil
+    activeGlowingIcons[iconFrame] = nil
+end
+
+-- Setup glow hooks (like BetterCooldownManager's SetupGlowHooks)
+local function SetupGlowHooks()
+    if ActionButtonSpellAlertManager then
+        if ActionButtonSpellAlertManager.ShowAlert then
+            hooksecurefunc(ActionButtonSpellAlertManager, "ShowAlert", function(_, button)
+                if not IsCooldownViewerIcon(button) then return end
+                HideBlizzardGlow(button)
+                StartGlow(button)
+            end)
+        end
+
+        if ActionButtonSpellAlertManager.HideAlert then
+            hooksecurefunc(ActionButtonSpellAlertManager, "HideAlert", function(_, button)
+                if not IsCooldownViewerIcon(button) then return end
+                StopGlow(button)
+            end)
+        end
+    end
 end
 
 -- Initialize the module
@@ -273,14 +190,9 @@ function ProcGlow:Initialize()
     local settings = GetProcGlowSettings()
     if not settings or not settings.enabled then return end
     
-    -- Set up hooks immediately
-    SetupGlowHooks()
-    
-    -- Hook into the spell alert manager (wait for it to be available)
+    -- Set up hooks (only ActionButtonSpellAlertManager like BetterCooldownManager)
     C_Timer.After(0.5, function()
-        if ActionButtonSpellAlertManager then
-            hooksecurefunc(ActionButtonSpellAlertManager, "ShowAlert", Hook_ShowAlert)
-        end
+        SetupGlowHooks()
     end)
 end
 
@@ -291,29 +203,35 @@ function ProcGlow:RefreshAll()
     
     -- Store which icons had glows before refresh
     local iconsWithGlows = {}
-    for icon, _ in pairs(activeGlowIcons) do
+    for icon, _ in pairs(activeGlowingIcons) do
         if icon then
-            -- Only track viewer icons
-            local buttonName = icon:GetName() or ""
-            if not (buttonName:match("ActionButton") or buttonName:match("MultiBar") or 
-                    buttonName:match("PetActionButton") or buttonName:match("StanceButton")) then
-                iconsWithGlows[icon] = true
-            end
+            iconsWithGlows[icon] = true
         end
     end
     
     -- Stop all existing custom glows
-    for icon, _ in pairs(activeGlowIcons) do
+    for icon, _ in pairs(activeGlowingIcons) do
         if icon then
-            self:StopGlow(icon)
+            StopGlow(icon)
         end
     end
-    wipe(activeGlowIcons)
+    wipe(activeGlowingIcons)
     
     -- Re-apply glows to icons that had them before (if settings allow)
     for icon, _ in pairs(iconsWithGlows) do
         if icon and icon:IsShown() then
-            self:StartGlow(icon)
+            StartGlow(icon)
         end
     end
+end
+
+-- Public API for starting/stopping glows (for compatibility)
+function ProcGlow:StartGlow(icon)
+    if not icon or not IsCooldownViewerIcon(icon) then return end
+    StartGlow(icon)
+end
+
+function ProcGlow:StopGlow(icon)
+    if not icon or not IsCooldownViewerIcon(icon) then return end
+    StopGlow(icon)
 end

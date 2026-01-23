@@ -194,7 +194,7 @@ local function ApplyLibCustomGlow(button, settings, spellID)
     elseif glowType == "Proc Glow" then
         LCG.ProcGlow_Start(button, {
             color = color,
-            startAnim = true,
+            startAnim = false,
             xOffset = 0,
             yOffset = 0,
             key = glowKey
