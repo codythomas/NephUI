@@ -8,6 +8,7 @@ end
 local min, max, floor, format = min, max, math.floor, string.format
 
 local _G = _G
+local UIParent = UIParent
 local GetPhysicalScreenSize = GetPhysicalScreenSize
 
 function NephUI:RefreshGlobalFX()
@@ -45,7 +46,12 @@ function NephUI:IsUltrawide(width, height)
 end
 
 function NephUI:UIMult()
-	NephUI.mult = NephUI.perfect
+	local scale = (UIParent and UIParent.GetScale and UIParent:GetScale()) or 1
+	if scale == 0 then
+		scale = 1
+	end
+
+	NephUI.mult = NephUI.perfect / scale
 end
 
 function NephUI:PixelBestSize()

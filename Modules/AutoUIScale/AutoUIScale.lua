@@ -10,6 +10,9 @@ function AutoUIScale:SetUIScale(scale)
         -- Only set UIParent scale, don't touch the CVar to avoid conflicts with edit mode
         -- The CVar is managed by WoW's built-in UI scale system, we just override the visual scale
         UIParent:SetScale(scale)
+        if NephUI and NephUI.PixelScaleChanged then
+            NephUI:PixelScaleChanged()
+        end
     end
 end
 

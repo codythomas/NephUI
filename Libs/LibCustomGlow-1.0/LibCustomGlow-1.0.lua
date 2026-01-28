@@ -198,38 +198,56 @@ local  pUpdate = function(self,elapsed)
         self.timer = self.timer%1
     end
     local progress = self.timer
-    local width,height = self:GetSize()
-    if width ~= self.info.width or height ~= self.info.height then
-        local perimeter = 2*(width+height)
-        if not (perimeter>0) then
-            return
-        end
-        self.info.width = width
-        self.info.height = height
-        self.info.pTLx = {
-            [0] = (height+self.info.length/2)/perimeter,
-            [1] = (height+width+self.info.length/2)/perimeter,
-            [2] = (2*height+width-self.info.length/2)/perimeter,
-            [3] = 1-self.info.length/2/perimeter
-        }
-        self.info.pTLy ={
-            [0] = (height-self.info.length/2)/perimeter,
-            [1] = (height+width+self.info.length/2)/perimeter,
-            [2] = (height*2+width+self.info.length/2)/perimeter,
-            [3] = 1-self.info.length/2/perimeter
-        }
-        self.info.pBRx ={
-            [0] = self.info.length/2/perimeter,
-            [1] = (height-self.info.length/2)/perimeter,
-            [2] = (height+width-self.info.length/2)/perimeter,
-            [3] = (height*2+width+self.info.length/2)/perimeter
-        }
-        self.info.pBRy ={
-            [0] = self.info.length/2/perimeter,
-            [1] = (height+self.info.length/2)/perimeter,
-            [2] = (height+width-self.info.length/2)/perimeter,
-            [3] = (height*2+width-self.info.length/2)/perimeter
-        }
+    -- Safely get size - protected values can't be compared directly
+    -- Always use cached values for calculations to avoid protected value issues
+    local width = self.info.width or 0
+    local height = self.info.height or 0
+    
+    -- Try to update cached values if we can safely get and compare new size
+    local sizeOk, sizeW, sizeH = pcall(function() return self:GetSize() end)
+    if sizeOk and sizeW and sizeH then
+        -- Try to compare - if this fails, values are protected
+        local updateOk = pcall(function()
+            if self.info.width ~= sizeW or self.info.height ~= sizeH then
+                local perimeter = 2*(sizeW+sizeH)
+                if perimeter > 0 then
+                    self.info.width = sizeW
+                    self.info.height = sizeH
+                    width = sizeW
+                    height = sizeH
+                    -- Recalculate perimeter-based values
+                    self.info.pTLx = {
+                        [0] = (height+self.info.length/2)/perimeter,
+                        [1] = (height+width+self.info.length/2)/perimeter,
+                        [2] = (2*height+width-self.info.length/2)/perimeter,
+                        [3] = 1-self.info.length/2/perimeter
+                    }
+                    self.info.pTLy ={
+                        [0] = (height-self.info.length/2)/perimeter,
+                        [1] = (height+width+self.info.length/2)/perimeter,
+                        [2] = (height*2+width+self.info.length/2)/perimeter,
+                        [3] = 1-self.info.length/2/perimeter
+                    }
+                    self.info.pBRx ={
+                        [0] = self.info.length/2/perimeter,
+                        [1] = (height-self.info.length/2)/perimeter,
+                        [2] = (height+width-self.info.length/2)/perimeter,
+                        [3] = (height*2+width+self.info.length/2)/perimeter
+                    }
+                    self.info.pBRy ={
+                        [0] = self.info.length/2/perimeter,
+                        [1] = (height+self.info.length/2)/perimeter,
+                        [2] = (height+width-self.info.length/2)/perimeter,
+                        [3] = (height*2+width-self.info.length/2)/perimeter
+                    }
+                end
+            end
+        end)
+        -- If update failed, we continue with cached values
+    end
+    
+    if width == 0 or height == 0 then
+        return  -- Can't proceed without valid dimensions
     end
     if self:IsShown() then
         if not (self.masks[1]:IsShown()) then
@@ -274,7 +292,22 @@ function lib.PixelGlow_Start(r,color,N,frequency,length,th,xOffset,yOffset,borde
     else
         period = 4
     end
-    local width,height = r:GetSize()
+    -- Safely get size - protected values can't be used in math operations
+    local width, height = 40, 40  -- Default fallback
+    local sizeOk, sizeW, sizeH = pcall(function() return r:GetSize() end)
+    if sizeOk and sizeW and sizeH then
+        -- Try to verify these are real numbers by attempting safe math
+        local mathOk = pcall(function() 
+            local test = sizeW + sizeH
+            if type(sizeW) == "number" and type(sizeH) == "number" then
+                return true
+            end
+            return false
+        end)
+        if mathOk then
+            width, height = sizeW, sizeH
+        end
+    end
     length = length or math.floor((width+height)*(2/N-0.1))
     length = min(length,min(width,height))
     th = th or 1
@@ -358,15 +391,33 @@ lib.stopList["Pixel Glow"] = lib.PixelGlow_Stop
 
 --Autocast Glow Functions--
 local function acUpdate(self,elapsed)
-    local width,height = self:GetSize()
-    if width ~= self.info.width or height ~= self.info.height then
-        if width*height == 0 then return end -- Avoid division by zero
-        self.info.width = width
-        self.info.height = height
-        self.info.perimeter = 2*(width+height)
-        self.info.bottomlim = height*2+width
-        self.info.rightlim = height+width
-        self.info.space = self.info.perimeter/self.info.N
+    -- Safely get size - protected values can't be compared directly
+    -- Always use cached values for calculations to avoid protected value issues
+    local width = self.info.width or 0
+    local height = self.info.height or 0
+    
+    -- Try to update cached values if we can safely get and compare new size
+    local sizeOk, sizeW, sizeH = pcall(function() return self:GetSize() end)
+    if sizeOk and sizeW and sizeH then
+        -- Try to compare - if this fails, values are protected
+        local updateOk = pcall(function()
+            if self.info.width ~= sizeW or self.info.height ~= sizeH then
+                if sizeW*sizeH == 0 then return end -- Avoid division by zero
+                self.info.width = sizeW
+                self.info.height = sizeH
+                width = sizeW
+                height = sizeH
+                self.info.perimeter = 2*(width+height)
+                self.info.bottomlim = height*2+width
+                self.info.rightlim = height+width
+                self.info.space = self.info.perimeter/self.info.N
+            end
+        end)
+        -- If update failed, we continue with cached values
+    end
+    
+    if width == 0 or height == 0 then
+        return  -- Can't proceed without valid dimensions
     end
 
     local texIndex = 0;
@@ -725,11 +776,8 @@ function lib.ButtonGlow_Start(r,color,frequency,frameLevel)
 
         f.animIn:Play()
 
-        if Masque and Masque.UpdateSpellAlert and (not r.overlay or not issecurevariable(r, "overlay")) then
-            local old_overlay = r.overlay
-            r.overlay = f
-            Masque:UpdateSpellAlert(r)
-            r.overlay = old_overlay
+        if Masque and Masque.UpdateSpellAlert then
+            Masque:UpdateSpellAlert(r, f)
         end
     end
 end

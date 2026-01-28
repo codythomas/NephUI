@@ -5,7 +5,7 @@ local function CreateCustomIconOptions()
     return {
         type = "group",
         name = "Dynamic Icons",
-        order = 6,
+        order = 8,
         args = {
             header = {
                 type = "header",

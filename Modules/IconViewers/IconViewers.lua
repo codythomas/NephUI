@@ -156,22 +156,12 @@ function IconViewers:HookViewers()
 
             -- Event-based updates instead of OnUpdate for better performance
             if name == "BuffIconCooldownViewer" then
-                -- Buff viewer: hook into UNIT_AURA events for immediate updates
-                if not viewer.__cdmAuraHook then
-                    viewer.__cdmAuraHook = CreateFrame("Frame")
-                    viewer.__cdmAuraHook:RegisterEvent("UNIT_AURA")
-                    viewer.__cdmAuraHook:SetScript("OnEvent", function(_, event, unit)
-                        if unit == "player" and viewer:IsShown() then
-                            -- Throttled rescan to avoid spam
-                            if not viewer.__cdmRescanPending then
-                                viewer.__cdmRescanPending = true
-                                C_Timer.After(0.1, function()
-                                    viewer.__cdmRescanPending = nil
-                                    if viewer:IsShown() and IconViewers.RescanViewer then
-                                        IconViewers:RescanViewer(viewer)
-                                    end
-                                end)
-                            end
+                -- Buff viewer: refresh when Blizzard aura events fire on icon frames
+                if not viewer.__cdmBuffIconOnShowHook then
+                    viewer.__cdmBuffIconOnShowHook = true
+                    viewer:HookScript("OnShow", function()
+                        if IconViewers.RescanViewer then
+                            IconViewers:RescanViewer(viewer)
                         end
                     end)
                 end

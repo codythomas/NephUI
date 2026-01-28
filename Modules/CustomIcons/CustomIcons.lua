@@ -108,6 +108,7 @@ local DEFAULT_ICON_SETTINGS = {
     showGCDSwipe = false,
     desaturateWhenUnusable = true,
     desaturateOnCooldown = true,
+    hideIfNotUsable = true,
     countSettings = {
         size = 16,
         anchor = "BOTTOMRIGHT",
@@ -140,6 +141,7 @@ local function EnsureIconSettings(iconData)
     if settings.showGCDSwipe == nil then settings.showGCDSwipe = DEFAULT_ICON_SETTINGS.showGCDSwipe end
     if settings.desaturateWhenUnusable == nil then settings.desaturateWhenUnusable = DEFAULT_ICON_SETTINGS.desaturateWhenUnusable end
     if settings.desaturateOnCooldown == nil then settings.desaturateOnCooldown = DEFAULT_ICON_SETTINGS.desaturateOnCooldown end
+    if settings.hideIfNotUsable == nil then settings.hideIfNotUsable = DEFAULT_ICON_SETTINGS.hideIfNotUsable end
 
     settings.countSettings = settings.countSettings or {}
     if settings.countSettings.size == nil then settings.countSettings.size = DEFAULT_ICON_SETTINGS.countSettings.size end
@@ -731,6 +733,15 @@ local function EnsureEventFrame()
             return
         end
 
+        -- When equipment changes, reload slot icons to check if they should be shown/hidden
+        if event == "PLAYER_EQUIPMENT_CHANGED" or event == "UNIT_INVENTORY_CHANGED" then
+            -- Reload all icons to check slot icon usability
+            -- This will use IsIconLoadable which now checks if slot items are usable
+            if CustomIcons and CustomIcons.LoadDynamicIcons then
+                CustomIcons:LoadDynamicIcons()
+            end
+        end
+
         -- Update all icons when relevant events fire
         UpdateAllIcons()
     end)
@@ -793,10 +804,46 @@ local function IsSpellInPlayerBook(spellID)
     return true
 end
 
+local function IsSlotItemUsable(slotID)
+    if not slotID then return false end
+    
+    local itemID = GetInventoryItemID("player", slotID)
+    if not itemID then return false end
+    
+    -- Check if item has a use effect (spell) - this is the primary indicator of usability
+    local itemSpell = GetItemSpell(itemID)
+    if itemSpell then
+        return true
+    end
+    
+    -- Check if item is usable via C_Item API (most reliable check)
+    if C_Item and C_Item.IsItemUsable then
+        local isUsable = C_Item.IsItemUsable(itemID)
+        if isUsable then
+            return true
+        end
+    end
+    
+    -- If neither check indicates usability, the item is not usable
+    return false
+end
+
 local function IsIconLoadable(iconData)
     if not iconData then return false end
     if iconData.type == "spell" then
         return IsSpellInPlayerBook(iconData.id)
+    elseif iconData.type == "slot" then
+        -- Check if hideIfNotUsable is enabled (defaults to true)
+        local hideIfNotUsable = iconData.settings and iconData.settings.hideIfNotUsable
+        if hideIfNotUsable == nil then hideIfNotUsable = true end -- Default to true
+        
+        -- If hideIfNotUsable is enabled, only load slot icons if the equipped item is usable
+        if hideIfNotUsable then
+            return IsSlotItemUsable(iconData.slotID)
+        else
+            -- If disabled, always load the icon (even if item is not usable)
+            return true
+        end
     end
     return true
 end
@@ -816,6 +863,11 @@ local function ShouldIconSpawn(iconData)
     if not iconData then return false end
     -- Spellbook gating
     if iconData.type == "spell" and not IsSpellInPlayerBook(iconData.id) then
+        return false
+    end
+    
+    -- Slot item usability gating - only spawn if item is usable (respects hideIfNotUsable setting)
+    if iconData.type == "slot" and not IsIconLoadable(iconData) then
         return false
     end
 
@@ -2391,6 +2443,25 @@ function CustomIcons:RefreshDynamicConfigUI()
             width = "full",
         }, y)
         y = y + 32
+
+        -- Only show "Hide if Not Usable" toggle for slot-type icons
+        if iconData.type == "slot" then
+            Widgets.CreateToggle(uiFrames.configParent, {
+                name = "Hide if Not Usable",
+                get = function() return iconData.settings.hideIfNotUsable ~= false end,
+                set = function(_, val)
+                    iconData.settings.hideIfNotUsable = val
+                    -- Reload icons to apply the change immediately
+                    if CustomIcons and CustomIcons.LoadDynamicIcons then
+                        CustomIcons:LoadDynamicIcons()
+                    end
+                    RefreshAllLayouts()
+                    CustomIcons:RefreshDynamicConfigUI()
+                end,
+                width = "full",
+            }, y)
+            y = y + 32
+        end
 
         Widgets.CreateExecute(uiFrames.configParent, {
             name = "Load Conditions...",

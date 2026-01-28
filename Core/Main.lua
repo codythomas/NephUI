@@ -9,7 +9,7 @@ local NephUI = LibStub("AceAddon-3.0"):NewAddon(
 ns.Addon = NephUI
 
 -- Get localization table (should be loaded by Locales/Locale.lua)
-local L = ns.L or LibStub("AceLocale-3.0"):GetLocale(ADDON_NAME, true)
+local L = ns.L or LibStub("AceLocale-3.0"):GetLocale(ADDON_NAME, true) or {}
 
 local AceSerializer = LibStub("AceSerializer-3.0", true)
 local LibDeflate    = LibStub("LibDeflate", true)
@@ -155,6 +155,101 @@ function NephUI:InitializeSelectionAlphaController()
             NephUI:ApplySelectionAlphaToAllFrames()
         end
     end)
+end
+
+local function DeepCopyTable(source, seen)
+    if type(source) ~= "table" then
+        return source
+    end
+
+    seen = seen or {}
+    if seen[source] then
+        return seen[source]
+    end
+
+    local copy = {}
+    seen[source] = copy
+
+    for key, value in pairs(source) do
+        copy[DeepCopyTable(key, seen)] = DeepCopyTable(value, seen)
+    end
+
+    return copy
+end
+
+local function LooksLikeCooldownManagerProfile(profile)
+    if type(profile) ~= "table" then
+        return false
+    end
+
+    if profile.viewers or profile.cooldownManager_keybindFontName then
+        return true
+    end
+
+    if profile.cooldownManager_showKeybinds_Essential
+        or profile.cooldownManager_showKeybinds_Utility
+        or profile.customIcons
+        or profile.dynamicIcons then
+        return true
+    end
+
+    return false
+end
+
+local function LooksLikeCooldownManagerDB(db)
+    if type(db) ~= "table" then
+        return false
+    end
+
+    if type(db.profiles) == "table" then
+        for _, profile in pairs(db.profiles) do
+            if LooksLikeCooldownManagerProfile(profile) then
+                return true
+            end
+        end
+    end
+
+    if LooksLikeCooldownManagerProfile(db) then
+        return true
+    end
+
+    return false
+end
+
+function NephUI:ImportLegacyCooldownManagerDB()
+    if type(NephUIDB) == "table" and next(NephUIDB) ~= nil then
+        return false
+    end
+
+    local legacyCandidates = {
+        "NephUICooldownManagerDB",
+        "NephUICooldownManager",
+        "NephUICDMDB",
+        "NephUICooldownDB",
+        "NephUICooldownViewerDB",
+        "CooldownManagerDB",
+    }
+
+    for _, name in ipairs(legacyCandidates) do
+        local legacy = _G[name]
+        if LooksLikeCooldownManagerDB(legacy) then
+            local imported = DeepCopyTable(legacy)
+            if not imported.profiles then
+                imported = {
+                    profileKeys = {},
+                    profiles = {
+                        Default = DeepCopyTable(legacy),
+                    },
+                }
+            end
+
+            imported.__nephuiLegacySource = name
+            NephUIDB = imported
+            return true, name
+        end
+    end
+
+    return false
 end
 
 function NephUI:ExportProfileToString()
@@ -322,10 +417,10 @@ function NephUI:OnInitialize()
     
     self:RegisterChatCommand("nephui", "OpenConfig")
     self:RegisterChatCommand("nui", "OpenConfig")
-    self:RegisterChatCommand("nephframes", "OpenPartyRaidFramesConfig")
-    self:RegisterChatCommand("nframes", "OpenPartyRaidFramesConfig")
     self:RegisterChatCommand("nephuirefresh", "ForceRefreshBuffIcons")
     self:RegisterChatCommand("nephuicheckdualspec", "CheckDualSpec")
+    self:RegisterChatCommand("cdm", "OpenCooldownViewerSettings")
+    self:RegisterChatCommand("wa", "OpenCooldownViewerSettings")
     
     self:CreateMinimapButton()
 end
@@ -350,6 +445,191 @@ function NephUI:OnProfileChanged(event, db, profileKey)
             self:RefreshAll()
         end
     end
+end
+
+local function EnsureProfileTable(db, key)
+    if not db or not db.profile then
+        return nil
+    end
+    if type(db.profile[key]) ~= "table" then
+        db.profile[key] = {}
+    end
+    return db.profile[key]
+end
+
+local function IsElvUILoaded()
+    if not C_AddOns or not C_AddOns.IsAddOnLoaded then
+        return false
+    end
+    return C_AddOns.IsAddOnLoaded("ElvUI")
+end
+
+function NephUI:ShowElvUIConflictPopup()
+    if not self.db or not self.db.profile then
+        return
+    end
+
+    local frame = self.ElvUIConflictPopup
+    if not frame then
+        frame = CreateFrame("Frame", "NephUIElvUIConflictPopup", UIParent, "BackdropTemplate")
+        frame:SetSize(420, 280)
+        frame:SetPoint("CENTER")
+        frame:SetFrameStrata("DIALOG")
+        frame:SetFrameLevel(100)
+        frame:SetClampedToScreen(true)
+        frame:EnableMouse(true)
+        frame:SetMovable(true)
+        frame:RegisterForDrag("LeftButton")
+        frame:SetScript("OnDragStart", function(self)
+            self:StartMoving()
+        end)
+        frame:SetScript("OnDragStop", function(self)
+            self:StopMovingOrSizing()
+        end)
+
+        frame:SetBackdrop({
+            bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+            edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+            tile = true,
+            tileSize = 32,
+            edgeSize = 32,
+            insets = { left = 8, right = 8, top = 8, bottom = 8 }
+        })
+
+        local title = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
+        title:SetPoint("TOP", 0, -16)
+        title:SetText("ElvUI detected")
+        frame.Title = title
+
+        local desc = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        desc:SetPoint("TOP", title, "BOTTOM", 0, -8)
+        desc:SetText("To avoid conflicts, disable these NephUI features:")
+        frame.Description = desc
+
+        local function CreateConflictCheckbox(label, anchor)
+            local check = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+            check:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -10)
+            if check.Text then
+                check.Text:SetText(label)
+            end
+            return check
+        end
+
+        local firstAnchor = desc
+
+        frame.UnitFramesCheck = CreateConflictCheckbox("Disable Unit Frames", firstAnchor)
+        frame.ActionBarsCheck = CreateConflictCheckbox("Disable Action Bars", frame.UnitFramesCheck)
+        frame.MinimapCheck = CreateConflictCheckbox("Disable Minimap", frame.ActionBarsCheck)
+        frame.MicroMenuCheck = CreateConflictCheckbox("Disable Micro Menu skinning", frame.MinimapCheck)
+
+        local reloadButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+        reloadButton:SetSize(140, 24)
+        reloadButton:SetPoint("BOTTOM", 0, 16)
+        reloadButton:SetText("Reload UI")
+        frame.ReloadButton = reloadButton
+
+        local closeButton = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
+        closeButton:SetPoint("TOPRIGHT", -4, -4)
+        frame.CloseButton = closeButton
+
+        local function SetElvUIPopupDismissed()
+            local conflicts = EnsureProfileTable(self.db, "conflicts")
+            if conflicts then
+                conflicts.elvuiPopupDismissed = true
+            end
+        end
+
+        local cancelButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+        cancelButton:SetSize(90, 22)
+        cancelButton:SetPoint("RIGHT", reloadButton, "LEFT", -10, 0)
+        cancelButton:SetText("Cancel")
+        cancelButton:SetScript("OnClick", function()
+            SetElvUIPopupDismissed()
+            frame:Hide()
+        end)
+        frame.CancelButton = cancelButton
+
+        closeButton:SetScript("OnClick", function()
+            SetElvUIPopupDismissed()
+            frame:Hide()
+        end)
+
+        reloadButton:SetScript("OnClick", function()
+            local unitFrames = EnsureProfileTable(self.db, "unitFrames")
+            local actionBars = EnsureProfileTable(self.db, "actionBars")
+            local minimap = EnsureProfileTable(self.db, "minimap")
+            local qol = EnsureProfileTable(self.db, "qol")
+
+            if frame.UnitFramesCheck:GetChecked() and unitFrames then
+                unitFrames.enabled = false
+            end
+            if frame.ActionBarsCheck:GetChecked() and actionBars then
+                actionBars.enabled = false
+            end
+            if frame.MinimapCheck:GetChecked() and minimap then
+                minimap.enabled = false
+            end
+            if frame.MicroMenuCheck:GetChecked() and qol then
+                qol.microMenuSkinning = false
+            end
+
+            SetElvUIPopupDismissed()
+            ReloadUI()
+        end)
+
+        self.ElvUIConflictPopup = frame
+    end
+
+    local db = self.db.profile
+    frame.UnitFramesCheck:SetChecked(db.unitFrames and db.unitFrames.enabled ~= false)
+    frame.ActionBarsCheck:SetChecked(db.actionBars and db.actionBars.enabled ~= false)
+    frame.MinimapCheck:SetChecked(db.minimap and db.minimap.enabled ~= false)
+    frame.MicroMenuCheck:SetChecked(db.qol and db.qol.microMenuSkinning ~= false)
+
+    frame:Show()
+    frame:Raise()
+end
+
+function NephUI:MaybeShowElvUIConflictPopup()
+    if self.__elvuiConflictPopupShown then
+        return
+    end
+    if not IsElvUILoaded() then
+        return
+    end
+    if not self.db or not self.db.profile then
+        return
+    end
+
+    local db = self.db.profile
+    if db.conflicts and db.conflicts.elvuiPopupDismissed then
+        return
+    end
+    local unitFramesEnabled = db.unitFrames and db.unitFrames.enabled ~= false
+    local actionBarsEnabled = db.actionBars and db.actionBars.enabled ~= false
+    local minimapEnabled = db.minimap and db.minimap.enabled ~= false
+    local microMenuEnabled = db.qol and db.qol.microMenuSkinning ~= false
+
+    if not (unitFramesEnabled or actionBarsEnabled or minimapEnabled or microMenuEnabled) then
+        return
+    end
+
+    if InCombatLockdown() then
+        if not self.__pendingElvUIConflictPopup then
+            self.__pendingElvUIConflictPopup = true
+            local eventFrame = CreateFrame("Frame")
+            eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+            eventFrame:SetScript("OnEvent", function(self)
+                self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+                NephUI.__pendingElvUIConflictPopup = nil
+                NephUI:MaybeShowElvUIConflictPopup()
+            end)
+        end
+        return
+    end
+
+    self.__elvuiConflictPopupShown = true
+    self:ShowElvUIConflictPopup()
 end
 
 function NephUI:InitializePixelPerfect()
@@ -392,6 +672,10 @@ local function StyleMicroButton(button)
 end
 
 function NephUI:StyleMicroButtons()
+    local db = self.db and self.db.profile and self.db.profile.qol
+    if db and db.microMenuSkinning == false then
+        return
+    end
     if type(MICRO_BUTTONS) == "table" then
         for _, name in ipairs(MICRO_BUTTONS) do
             StyleMicroButton(_G[name])
@@ -408,11 +692,65 @@ function NephUI:PLAYER_LOGIN()
     self:UnregisterEvent("PLAYER_LOGIN")
 end
 
+function NephUI:PLAYER_ENTERING_WORLD()
+    -- Setup hooks and apply anchors if the toggle is enabled
+    -- Use the exact same logic as when the toggle is enabled in config
+    local cfg = self.db.profile.viewers.general
+    if cfg and cfg.anchorToUnitFrame then
+        if self.UpdateViewerUnitFrameAnchor then
+            -- Apply multiple times with increasing delays to override other addons.
+            -- ~2s delay is important for reload: UUF/ElvUI frames are created in OnEnable
+            -- after ADDON_LOADED; this ensures we run after they exist.
+            local delays = {0.5, 1.5, 2.0, 3.0, 5.0}
+            for _, delay in ipairs(delays) do
+                C_Timer.After(delay, function()
+                    self:UpdateViewerUnitFrameAnchor()
+                end)
+            end
+        end
+    end
+end
+
+-- Unit frame addons we want to re-apply anchors after
+local unitFrameAddons = {
+    ["UnhaltedUnitFrames"] = true,
+    ["ElvUI"] = true,
+    ["ElvUI_Libraries"] = true,
+    ["ElvUI_Options"] = true,
+    ["ShadowedUnitFrames"] = true,
+    ["Pitbull4"] = true,
+    ["Grid2"] = true,
+}
+
+function NephUI:ADDON_LOADED(_, addonName)
+    -- Re-apply anchors when a unit frame addon finishes loading
+    if unitFrameAddons[addonName] then
+        local cfg = self.db and self.db.profile and self.db.profile.viewers and self.db.profile.viewers.general
+        if cfg and cfg.anchorToUnitFrame and self.UpdateViewerUnitFrameAnchor then
+            -- Delay to let the addon initialize its frames (OnEnable runs after ADDON_LOADED).
+            -- UUF creates frames in OnEnable; 2s and 2.5s help with reload timing.
+            C_Timer.After(1.0, function()
+                self:UpdateViewerUnitFrameAnchor()
+            end)
+            C_Timer.After(2.0, function()
+                self:UpdateViewerUnitFrameAnchor()
+            end)
+            C_Timer.After(2.5, function()
+                self:UpdateViewerUnitFrameAnchor()
+            end)
+        end
+    end
+end
+
 function NephUI:OnEnable()
     SetCVar("cooldownViewerEnabled", 1)
     
     if self.UIMult then
         self:UIMult()
+    end
+    
+    if self.AutoUIScale and self.AutoUIScale.Initialize then
+        self.AutoUIScale:Initialize()
     end
     
     if self.ApplyGlobalFont then
@@ -422,6 +760,8 @@ function NephUI:OnEnable()
     end
     
     self:RegisterEvent("PLAYER_LOGIN")
+    self:RegisterEvent("PLAYER_ENTERING_WORLD")
+    self:RegisterEvent("ADDON_LOADED")
     
     C_Timer.After(0.1, function()
         NephUI:StyleMicroButtons()
@@ -455,46 +795,21 @@ function NephUI:OnEnable()
         self.ResourceBars:Initialize()
     end
 
-    if self.PartyFrames and self.PartyFrames.Initialize then
-        self.PartyFrames:Initialize()
+    if self.UnitFrames and self.UnitFrames.Initialize then
+        self.UnitFrames:Initialize()
     end
 
-    if self.RaidFrames and self.RaidFrames.Initialize then
-        self.RaidFrames:Initialize()
+    if self.AbsorbBars and self.AbsorbBars.Initialize then
+        local ufDb = self.db and self.db.profile and self.db.profile.unitFrames
+        if not ufDb or ufDb.enabled ~= false then
+            C_Timer.After(0.5, function()
+                self.AbsorbBars:Initialize()
+            end)
+        end
     end
-    
-    if self.AutoUIScale and self.AutoUIScale.Initialize then
-        self.AutoUIScale:Initialize()
-    end
-    
-    if self.Chat and self.Chat.Initialize then
-        self.Chat:Initialize()
-    end
-    
-    if self.Minimap and self.Minimap.Initialize then
-        self.Minimap:Initialize()
-    end
-    
-    if self.ActionBars and self.ActionBars.Initialize then
-        self.ActionBars:Initialize()
-    end
-    
-    if self.ActionBarGlow and self.ActionBarGlow.Initialize then
-        C_Timer.After(1.0, function()
-            self.ActionBarGlow:Initialize()
-        end)
-    end
-    
-    if self.BuffDebuffFrames and self.BuffDebuffFrames.Initialize then
-        self.BuffDebuffFrames:Initialize()
-    end
-    
+
     if self.QOL and self.QOL.Initialize then
         self.QOL:Initialize()
-    end
-
-    if self.CharacterPanel and self.CharacterPanel.Initialize then
-        self.CharacterPanel:Initialize()
     end
     
     C_Timer.After(0.1, function()
@@ -509,33 +824,6 @@ function NephUI:OnEnable()
         end
     end)
     
-    if self.UnitFrames and self.db.profile.unitFrames and self.db.profile.unitFrames.enabled then
-        C_Timer.After(0.5, function()
-            if self.UnitFrames.Initialize then
-                self.UnitFrames:Initialize()
-            end
-            
-            if self.AbsorbBars and self.AbsorbBars.Initialize then
-                self.AbsorbBars:Initialize()
-            end
-            
-            local UF = self.UnitFrames
-            if UF and UF.RepositionAllUnitFrames then
-                local originalReposition = UF.RepositionAllUnitFrames
-                UF.RepositionAllUnitFrames = function(self, ...)
-                    originalReposition(self, ...)
-                    C_Timer.After(0.1, function()
-                        if NephUI.CustomIcons and NephUI.CustomIcons.ApplyCustomIconsLayout then
-                            NephUI.CustomIcons:ApplyCustomIconsLayout()
-                        end
-                        if NephUI.CustomIcons and NephUI.CustomIcons.ApplyTrinketsLayout then
-                            NephUI.CustomIcons:ApplyTrinketsLayout()
-                        end
-                    end)
-                end
-            end
-        end)
-    end
     
     if self.IconViewers and self.IconViewers.AutoLoadBuffIcons then
         C_Timer.After(0.5, function()
@@ -577,6 +865,10 @@ function NephUI:OnEnable()
     end
 
     self:InitializeSelectionAlphaController()
+
+    C_Timer.After(1.0, function()
+        NephUI:MaybeShowElvUIConflictPopup()
+    end)
 end
 
 function NephUI:OpenConfig()
@@ -588,13 +880,18 @@ function NephUI:OpenConfig()
     end
 end
 
-function NephUI:OpenPartyRaidFramesConfig()
-    if self.PartyFrames and self.PartyFrames.ToggleGUI then
-        self.PartyFrames:ToggleGUI()
-    else
-        print("|cffff0000[NephUI] Party/Raid frames GUI not loaded.|r")
+function NephUI:OpenCooldownViewerSettings()
+    local frame = _G["CooldownViewerSettings"]
+    if frame then
+        frame:Show()
+        frame:Raise()
+        return
+    end
+    if self.OpenConfigGUI then
+        self:OpenConfigGUI(nil, "viewers")
     end
 end
+
 
 function NephUI:CheckDualSpec()
     local LibDualSpec = LibStub("LibDualSpec-1.0", true)
@@ -650,7 +947,7 @@ function NephUI:CreateMinimapButton()
     local dataObj = LDB:NewDataObject(ADDON_NAME, {
         type = "launcher",
         icon = "Interface\\AddOns\\NephUI\\Media\\nephui.tga",
-        label = L["NephUI"] or "NephUI",
+        label = ADDON_NAME,
         OnClick = function(clickedframe, button)
             if button == "LeftButton" then
                 self:OpenConfig()
@@ -659,7 +956,7 @@ function NephUI:CreateMinimapButton()
             end
         end,
         OnTooltipShow = function(tooltip)
-            tooltip:SetText(L["NephUI"] or "NephUI")
+            tooltip:SetText(ADDON_NAME)
             tooltip:AddLine(L["Left-click to open configuration"] or "Left-click to open configuration", 1, 1, 1)
             tooltip:AddLine(L["Right-click to open configuration"] or "Right-click to open configuration", 1, 1, 1)
         end,
@@ -675,6 +972,328 @@ function NephUI:RefreshViewers()
 
     if self.ProcGlow and self.ProcGlow.RefreshAll then
         self.ProcGlow:RefreshAll()
+    end
+    
+    -- Update unit frame anchors to viewer if enabled
+    if self.UpdateViewerUnitFrameAnchor then
+        self:UpdateViewerUnitFrameAnchor()
+    end
+end
+
+-- Unit frame names to check
+local unitFrameNames = {
+    -- Default frames
+    "PlayerFrame",
+    "TargetFrame",
+    "FocusFrame",
+    "PetFrame",
+    -- Unhalted Unit Frames
+    "UUF_Player",
+    "UUF_Target",
+    "UUF_Pet",
+    -- ElvUI frames
+    "ElvUF_Player",
+    "ElvUF_Target",
+    "ElvUF_Pet",
+}
+
+-- Debug command to check frame status: /nephuidebuganchor
+SLASH_NEPHUIDEBUGANCHOR1 = "/nephuidebuganchor"
+SlashCmdList["NEPHUIDEBUGANCHOR"] = function()
+    print("|cFF00FF00[NephUI Anchor Debug]|r")
+    local viewer = _G["EssentialCooldownViewer"]
+    print("  Viewer exists: " .. tostring(viewer ~= nil))
+    if viewer then
+        print("  Viewer shown: " .. tostring(viewer:IsShown()))
+    end
+    print("  anchorToUnitFrame enabled: " .. tostring(NephUI.db and NephUI.db.profile and NephUI.db.profile.viewers and NephUI.db.profile.viewers.general and NephUI.db.profile.viewers.general.anchorToUnitFrame or false))
+    print("  Unit frames:")
+    for _, frameName in ipairs(unitFrameNames) do
+        local frame = _G[frameName]
+        if frame then
+            local hooked = frame.__nephuiAnchorHooked and "YES" or "NO"
+            local _, relativeTo = frame:GetPoint(1)
+            local anchoredTo = relativeTo and (relativeTo.GetName and relativeTo:GetName() or tostring(relativeTo)) or "nil"
+            print(string.format("    %s: EXISTS, hooked=%s, anchored to=%s", frameName, hooked, anchoredTo))
+        else
+            print(string.format("    %s: NOT FOUND", frameName))
+        end
+    end
+end
+
+-- Reload UI shortcut: /rl
+SLASH_NEPHUIRELOAD1 = "/rl"
+SlashCmdList["NEPHUIRELOAD"] = function()
+    ReloadUI()
+end
+
+-- Helper function to hook a single unit frame
+local function HookUnitFrame(frame)
+    if not frame or frame.__nephuiAnchorHooked then
+        return false
+    end
+
+    frame.__nephuiAnchorHooked = true
+    frame.__nephuiOriginalSetPoint = frame.SetPoint
+    frame.__nephuiOriginalClearAllPoints = frame.ClearAllPoints
+
+    -- Override SetPoint to intercept other addons trying to reposition the frame
+    frame.SetPoint = function(unitFrame, ...)
+        local viewer = _G["EssentialCooldownViewer"]
+        local anchorCfg = NephUI.db and NephUI.db.profile and NephUI.db.profile.viewers and NephUI.db.profile.viewers.general
+
+        -- If anchoring is enabled and viewer exists, ignore external SetPoint calls
+        -- and re-apply our anchor instead
+        if anchorCfg and anchorCfg.anchorToUnitFrame and viewer and not unitFrame.__nephuiApplyingAnchor then
+            -- Schedule re-application of our anchor (debounced)
+            if not unitFrame.__nephuiReanchorPending then
+                unitFrame.__nephuiReanchorPending = true
+                C_Timer.After(0.1, function()
+                    unitFrame.__nephuiReanchorPending = nil
+                    if NephUI.ApplyUnitFrameAnchors then
+                        NephUI:ApplyUnitFrameAnchors()
+                    end
+                end)
+            end
+            return
+        end
+
+        -- If not anchoring or viewer doesn't exist, use original SetPoint
+        if unitFrame.__nephuiOriginalSetPoint then
+            unitFrame.__nephuiOriginalSetPoint(unitFrame, ...)
+        end
+    end
+
+    -- Override ClearAllPoints similarly
+    frame.ClearAllPoints = function(unitFrame)
+        local anchorCfg = NephUI.db and NephUI.db.profile and NephUI.db.profile.viewers and NephUI.db.profile.viewers.general
+
+        -- If we're applying our own anchor, allow it
+        if unitFrame.__nephuiApplyingAnchor then
+            if unitFrame.__nephuiOriginalClearAllPoints then
+                unitFrame.__nephuiOriginalClearAllPoints(unitFrame)
+            end
+            return
+        end
+
+        -- If anchoring is enabled, ignore external ClearAllPoints calls
+        if anchorCfg and anchorCfg.anchorToUnitFrame then
+            return
+        end
+
+        -- Otherwise use original
+        if unitFrame.__nephuiOriginalClearAllPoints then
+            unitFrame.__nephuiOriginalClearAllPoints(unitFrame)
+        end
+    end
+
+    return true
+end
+
+-- Setup hooks on unit frames (doesn't require viewer to exist)
+function NephUI:SetupUnitFrameHooks()
+    local cfg = self.db.profile.viewers.general
+    if not cfg then
+        return
+    end
+
+    if cfg.anchorToUnitFrame then
+        -- Hook SetPoint on unit frames to intercept repositioning and maintain our anchor
+        local unhookedFrames = {}
+        for _, frameName in ipairs(unitFrameNames) do
+            local frame = _G[frameName]
+            if frame then
+                HookUnitFrame(frame)
+            else
+                -- Frame doesn't exist yet, track it for polling
+                table.insert(unhookedFrames, frameName)
+            end
+        end
+
+        -- If some frames don't exist yet, poll for them
+        if #unhookedFrames > 0 and not self.__nephuiPollingForFrames then
+            self.__nephuiPollingForFrames = true
+            local attempts = 0
+            local maxAttempts = 20 -- Poll for up to 10 seconds (20 * 0.5s)
+
+            local function PollForFrames()
+                attempts = attempts + 1
+                local stillMissing = {}
+
+                for _, frameName in ipairs(unhookedFrames) do
+                    local frame = _G[frameName]
+                    if frame then
+                        if HookUnitFrame(frame) then
+                            -- Successfully hooked, apply anchor
+                            C_Timer.After(0.1, function()
+                                if NephUI.ApplyUnitFrameAnchors then
+                                    NephUI:ApplyUnitFrameAnchors()
+                                end
+                            end)
+                        end
+                    else
+                        table.insert(stillMissing, frameName)
+                    end
+                end
+
+                unhookedFrames = stillMissing
+
+                -- Continue polling if frames still missing and under max attempts
+                if #unhookedFrames > 0 and attempts < maxAttempts then
+                    C_Timer.After(0.5, PollForFrames)
+                else
+                    self.__nephuiPollingForFrames = nil
+                end
+            end
+
+            C_Timer.After(0.5, PollForFrames)
+        end
+    else
+        -- Unhook and restore original behavior
+        for _, frameName in ipairs(unitFrameNames) do
+            local frame = _G[frameName]
+            if frame and frame.__nephuiAnchorHooked then
+                frame.__nephuiAnchorHooked = nil
+                if frame.__nephuiOriginalSetPoint then
+                    frame.SetPoint = frame.__nephuiOriginalSetPoint
+                    frame.__nephuiOriginalSetPoint = nil
+                end
+                if frame.__nephuiOriginalClearAllPoints then
+                    frame.ClearAllPoints = frame.__nephuiOriginalClearAllPoints
+                    frame.__nephuiOriginalClearAllPoints = nil
+                end
+            end
+        end
+    end
+end
+
+-- Function to anchor unit frames to EssentialCooldownViewer
+function NephUI:UpdateViewerUnitFrameAnchor()
+    local cfg = self.db.profile.viewers.general
+    if not cfg then
+        return
+    end
+
+    -- Setup hooks first (doesn't require viewer)
+    self:SetupUnitFrameHooks()
+
+    -- Hook the viewer's OnShow to re-apply anchors whenever it becomes visible
+    local viewer = _G["EssentialCooldownViewer"]
+    if viewer and not viewer.__nephuiAnchorOnShowHooked then
+        viewer.__nephuiAnchorOnShowHooked = true
+        viewer:HookScript("OnShow", function()
+            local anchorCfg = NephUI.db and NephUI.db.profile and NephUI.db.profile.viewers and NephUI.db.profile.viewers.general
+            if anchorCfg and anchorCfg.anchorToUnitFrame then
+                -- Apply anchors with delays to override other addons
+                C_Timer.After(0.1, function()
+                    NephUI:ApplyUnitFrameAnchors()
+                end)
+                C_Timer.After(1.0, function()
+                    NephUI:ApplyUnitFrameAnchors()
+                end)
+            end
+        end)
+    end
+
+    -- Apply anchoring (has retry logic if viewer doesn't exist yet)
+    if cfg.anchorToUnitFrame then
+        self:ApplyUnitFrameAnchors()
+    end
+end
+
+-- Apply anchors from unit frames to EssentialCooldownViewer
+function NephUI:ApplyUnitFrameAnchors()
+    local cfg = self.db.profile.viewers.general
+    if not cfg or not cfg.anchorToUnitFrame then
+        return
+    end
+    
+    -- First check: viewer must exist
+    local viewer = _G["EssentialCooldownViewer"]
+    if not viewer or type(viewer) ~= "table" then
+        -- Viewer doesn't exist yet, retry later
+        C_Timer.After(0.5, function()
+            if self.ApplyUnitFrameAnchors then
+                self:ApplyUnitFrameAnchors()
+            end
+        end)
+        return
+    end
+    
+    if InCombatLockdown() then
+        C_Timer.After(0.5, function()
+            if self.ApplyUnitFrameAnchors then
+                self:ApplyUnitFrameAnchors()
+            end
+        end)
+        return
+    end
+    
+    -- Unit frame mapping (frame name -> anchor config)
+    local unitFrameConfig = {
+        -- Default frames
+        PlayerFrame = { anchorPoint = "RIGHT", viewerPoint = "TOPLEFT", offsetX = -20, offsetY = 0 },
+        TargetFrame = { anchorPoint = "LEFT", viewerPoint = "TOPRIGHT", offsetX = 20, offsetY = 0 },
+        FocusFrame = { anchorPoint = "CENTER", viewerPoint = "TOP", offsetX = 0, offsetY = 0 },
+        PetFrame = { anchorPoint = "CENTER", viewerPoint = "TOP", offsetX = 0, offsetY = 0 },
+        -- Unhalted Unit Frames
+        UUF_Player = { anchorPoint = "TOPRIGHT", viewerPoint = "TOPLEFT", offsetX = -20, offsetY = 0 },
+        UUF_Target = { anchorPoint = "TOPLEFT", viewerPoint = "TOPRIGHT", offsetX = 20, offsetY = 0 },
+        UUF_Focus = { anchorPoint = "TOP", viewerPoint = "TOP", offsetX = 0, offsetY = 0 },
+        UUF_Pet = { anchorPoint = "TOP", viewerPoint = "TOP", offsetX = 0, offsetY = 0 },
+        UUF_TargetTarget = { anchorPoint = "TOP", viewerPoint = "TOP", offsetX = 0, offsetY = 0 },
+        -- ElvUI frames
+        ElvUF_Player = { anchorPoint = "TOPRIGHT", viewerPoint = "TOPLEFT", offsetX = -20, offsetY = 0 },
+        ElvUF_Target = { anchorPoint = "TOPLEFT", viewerPoint = "TOPRIGHT", offsetX = 20, offsetY = 0 },
+        ElvUF_Focus = { anchorPoint = "TOP", viewerPoint = "TOP", offsetX = 0, offsetY = 0 },
+        ElvUF_TargetTarget = { anchorPoint = "TOP", viewerPoint = "TOP", offsetX = 0, offsetY = 0 },
+        ElvUF_Pet = { anchorPoint = "TOP", viewerPoint = "TOP", offsetX = 0, offsetY = 0 },
+    }
+    
+    -- Second check: find at least one unit frame type that exists
+    local foundAnyFrame = false
+    for frameName, _ in pairs(unitFrameConfig) do
+        local frame = _G[frameName]
+        if frame and type(frame) == "table" then
+            foundAnyFrame = true
+            break
+        end
+    end
+    
+    -- If no unit frames found, retry after a delay (frames might not be spawned yet)
+    if not foundAnyFrame then
+        C_Timer.After(1.0, function()
+            if self.ApplyUnitFrameAnchors then
+                self:ApplyUnitFrameAnchors()
+            end
+        end)
+        return
+    end
+    
+    -- Both viewer and unit frames exist, apply anchors
+    local anchoredAny = false
+    for frameName, config in pairs(unitFrameConfig) do
+        local frame = _G[frameName]
+        if frame and type(frame) == "table" then
+            -- Set flag so our hooks allow our own calls through
+            frame.__nephuiApplyingAnchor = true
+
+            -- Frame exists, anchor it
+            if frame.__nephuiOriginalClearAllPoints then
+                frame.__nephuiOriginalClearAllPoints(frame)
+            else
+                frame:ClearAllPoints()
+            end
+
+            if frame.__nephuiOriginalSetPoint then
+                frame.__nephuiOriginalSetPoint(frame, config.anchorPoint, viewer, config.viewerPoint, config.offsetX, config.offsetY)
+            else
+                frame:SetPoint(config.anchorPoint, viewer, config.viewerPoint, config.offsetX, config.offsetY)
+            end
+
+            frame.__nephuiApplyingAnchor = nil
+            anchoredAny = true
+        end
     end
 end
 
@@ -702,42 +1321,11 @@ function NephUI:RefreshAll()
     if self.CastBars and self.CastBars.RefreshAll then
         self.CastBars:RefreshAll()
     end
-    
-    if self.Chat and self.Chat.RefreshAll then
-        self.Chat:RefreshAll()
-    end
-    
-    if self.ActionBars and self.ActionBars.RefreshAll then
-        self.ActionBars:RefreshAll()
-    end
-    
-    if self.BuffDebuffFrames and self.BuffDebuffFrames.RefreshAll then
-        self.BuffDebuffFrames:RefreshAll()
-    end
 
     if self.QOL and self.QOL.Refresh then
         self.QOL:Refresh()
     end
-
-    if self.CharacterPanel and self.CharacterPanel.Refresh then
-        self.CharacterPanel:Refresh()
-    end
     
-    if self.UnitFrames and self.UnitFrames.RefreshFrames then
-        self.UnitFrames:RefreshFrames()
-    end
-
-    if self.PartyFrames and self.PartyFrames.Refresh then
-        self.PartyFrames:Refresh()
-    end
-
-    if self.RaidFrames and self.RaidFrames.Refresh then
-        self.RaidFrames:Refresh()
-    end
-    
-    if self.Minimap and self.Minimap.Refresh then
-        self.Minimap:Refresh()
-    end
     
     if self.CustomIcons and self.db.profile.customIcons and self.db.profile.customIcons.enabled ~= false then
         self:RefreshCustomIcons()

@@ -90,6 +90,37 @@ local function IsPlaceholderIcon(iconFrame)
     return iconFrame.cooldownID == nil
 end
 
+local function HookBuffIconAuraEvents(viewer, iconFrame)
+    if not viewer or not iconFrame or iconFrame.__cdmAuraHooked then return end
+    iconFrame.__cdmAuraHooked = true
+
+    local function RequestRescan()
+        if not viewer:IsShown() or not IconViewers.RescanViewer then
+            return
+        end
+        if viewer.__cdmRescanPending then
+            return
+        end
+        viewer.__cdmRescanPending = true
+        C_Timer.After(0, function()
+            viewer.__cdmRescanPending = nil
+            if viewer:IsShown() and IconViewers.RescanViewer then
+                IconViewers:RescanViewer(viewer)
+            end
+        end)
+    end
+
+    if iconFrame.OnActiveStateChanged then
+        hooksecurefunc(iconFrame, "OnActiveStateChanged", RequestRescan)
+    end
+    if iconFrame.OnUnitAuraAddedEvent then
+        hooksecurefunc(iconFrame, "OnUnitAuraAddedEvent", RequestRescan)
+    end
+    if iconFrame.OnUnitAuraRemovedEvent then
+        hooksecurefunc(iconFrame, "OnUnitAuraRemovedEvent", RequestRescan)
+    end
+end
+
 local function NormalizeDirectionToken(token)
     if not token or token == "" then
         return nil
@@ -570,6 +601,10 @@ function IconViewers:RescanViewer(viewer)
                 -- Skip placeholder icons entirely
             elseif collectAllIcons or child:IsShown() then
                 table.insert(icons, child)
+
+                if name == "BuffIconCooldownViewer" then
+                    HookBuffIconAuraEvents(viewer, child)
+                end
 
                 if not child.__cdmSkinned and not child.__cdmSkinPending then
                     child.__cdmSkinPending = true

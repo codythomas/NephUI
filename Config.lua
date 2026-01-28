@@ -5,17 +5,14 @@ local LSM = LibStub("LibSharedMedia-3.0")
 local ViewerOptions = ns.CreateViewerOptions
 local ResourceBarOptions = ns.CreateResourceBarOptions
 local CastBarOptions = ns.CreateCastBarOptions
-local CustomIconOptions = ns.CreateCustomIconOptions
-local IconCustomizationOptions = ns.CreateIconCustomizationOptions
-local UnitFrameOptions = ns.CreateUnitFrameOptionsGroup
-local PartyFrameOptions = ns.CreatePartyFrameOptions
-local RaidFrameOptions = ns.CreateRaidFrameOptions
-local ClickCastOptions = ns.CreateClickCastOptions
-local ProfileOptions = ns.CreateProfileOptions
 local ChatOptions = ns.CreateChatOptions
-local MinimapOptions = ns.CreateMinimapOptions
 local ActionBarOptions = ns.CreateActionBarOptions
 local BuffDebuffFramesOptions = ns.CreateBuffDebuffFramesOptions
+local MinimapOptions = ns.CreateMinimapOptions
+local CustomIconOptions = ns.CreateCustomIconOptions
+local IconCustomizationOptions = ns.CreateIconCustomizationOptions
+local UnitFrameOptionsGroup = ns.CreateUnitFrameOptionsGroup
+local ProfileOptions = ns.CreateProfileOptions
 local QOLOptions = ns.CreateQOLOptions
 
 local function GetViewerOptions()
@@ -892,7 +889,7 @@ function NephUI:SetupOptions()
             general = {
                 type = "group",
                 name = "General",
-                order = 0,
+                order = 1,
                 args = {
                     -- General Settings Header
                     generalHeader = {
@@ -1162,31 +1159,11 @@ function NephUI:SetupOptions()
                 },
             },
             
-            -- MINIMAP TAB (moved from General sub-tab)
-            minimap = MinimapOptions(),
-            
-            -- CHAT TAB (moved from General sub-tab)
-            chat = ChatOptions(),
-
-            -- QUALITY OF LIFE TAB
-            qol = QOLOptions(),
-            
-            -- ACTION BARS TAB
-            actionBars = ActionBarOptions(),
-
-            -- BUFF/DEBUFF FRAMES TAB
-            buffDebuffFrames = BuffDebuffFramesOptions(),
-
-            -- PARTY & RAID FRAME TABS
-            partyFrames = PartyFrameOptions(),
-            raidFrames = RaidFrameOptions(),
-            clickCast = ClickCastOptions(),
-
             -- Cooldown Manager TAB
             viewers = {
                 type = "group",
                 name = "Cooldown Manager",
-                order = 3,
+                order = 5,
                 childGroups = "tab",
                 args = {
                     general = {
@@ -1198,6 +1175,36 @@ function NephUI:SetupOptions()
                                 type = "header",
                                 name = "Cooldown Manager Settings",
                                 order = 1,
+                            },
+                            -- Anchor to Unit Frame Section
+                            anchorHeader = {
+                                type = "header",
+                                name = "Unit Frame Anchoring",
+                                order = 5,
+                            },
+                            anchorToUnitFrame = {
+                                type = "toggle",
+                                name = "Anchor Unit Frames to Viewer",
+                                desc = "Automatically anchor Player/Target/Focus/Pet frames to Essential Cooldown Viewer. Supports default frames, Unhalted Unit Frames (UUF), and ElvUI frames.",
+                                width = "full",
+                                order = 6,
+                                get = function()
+                                    return NephUI.db.profile.viewers.general.anchorToUnitFrame or false
+                                end,
+                                set = function(_, val)
+                                    NephUI.db.profile.viewers.general.anchorToUnitFrame = val
+                                    if NephUI.UpdateViewerUnitFrameAnchor then
+                                        -- Delay to allow frames to spawn
+                                        C_Timer.After(0.5, function()
+                                            NephUI:UpdateViewerUnitFrameAnchor()
+                                        end)
+                                    end
+                                end,
+                            },
+                            anchorSpacer = {
+                                type = "description",
+                                name = " ",
+                                order = 7,
                             },
                             -- Proc Glow Section
                             procGlowHeader = {
@@ -1379,19 +1386,34 @@ function NephUI:SetupOptions()
                     iconCustomization = IconCustomizationOptions(),
                 },
             },
+
+            -- CHAT TAB
+            chat = ChatOptions(),
+
+            -- MINIMAP TAB
+            minimap = MinimapOptions(),
+            
+            -- ACTION BARS TAB
+            actionBars = ActionBarOptions(),
+            
+            -- BUFF/DEBUFF FRAMES TAB
+            buffDebuffFrames = BuffDebuffFramesOptions(),
             
             -- RESOURCE BARS TAB
             resourceBars = ResourceBarOptions(),
             
             -- CAST BARS TAB
             castBars = CastBarOptions(),
+
+            -- UNIT FRAMES TAB
+            unitFrames = UnitFrameOptionsGroup(),
             
             -- CUSTOM ICONS TAB
             customIcons = CustomIconOptions(),
             
-            -- UNIT FRAMES TAB
-            unitFrames = UnitFrameOptions(),
-            
+            -- QOL TAB
+            qol = QOLOptions(),
+
             -- IMPORT / EXPORT TAB
             importExport = ProfileOptions(),
         },
@@ -1454,7 +1476,7 @@ function NephUI:SetupOptions()
         
         -- Override name and order
         options.args.profiles.name = "Profiles"
-        options.args.profiles.order = 98
+        options.args.profiles.order = 12
         
         -- NOW we can safely enhance with LibDualSpec on the original profileOptions
         -- Since we've already copied profileOptions.args, any modifications to the original
@@ -1859,50 +1881,6 @@ function NephUI:SetupOptions()
         end,
     }
 
-    options.args.enableUnitFrameAnchors = {
-        type = "execute",
-        name = "Enable Unit Frame Anchors",
-        desc = "Show draggable anchors for unit frames (works independently of Edit Mode)",
-        order = 102,
-        func = function()
-            local db = NephUI.db.profile.unitFrames
-            if not db then
-                db = {}
-                NephUI.db.profile.unitFrames = db
-            end
-            if not db.General then db.General = {} end
-            db.General.ShowEditModeAnchors = true
-            if NephUI.UnitFrames then
-                NephUI.UnitFrames:UpdateEditModeAnchors()
-                print("|cff00ff00[NephUI] Unit frame anchors enabled|r")
-            else
-                print("|cffff0000[NephUI] Unit frames not initialized|r")
-            end
-        end,
-    }
-
-    options.args.disableUnitFrameAnchors = {
-        type = "execute",
-        name = "Disable Unit Frame Anchors",
-        desc = "Hide draggable anchors for unit frames",
-        order = 103,
-        func = function()
-            local db = NephUI.db.profile.unitFrames
-            if not db then
-                db = {}
-                NephUI.db.profile.unitFrames = db
-            end
-            if not db.General then db.General = {} end
-            db.General.ShowEditModeAnchors = false
-            if NephUI.UnitFrames then
-                NephUI.UnitFrames:UpdateEditModeAnchors()
-                print("|cff00ff00[NephUI] Unit frame anchors disabled|r")
-            else
-                print("|cffff0000[NephUI] Unit frames not initialized|r")
-            end
-        end,
-    }
-
     -- Version display and Discord link button
     options.args.versionSpacer = {
         type = "description",
@@ -1937,17 +1915,3 @@ function NephUI:SetupOptions()
     self.configOptions = options
 end
 
--- Disable unit frame anchors when config panel closes
-function NephUI:DisableUnitFrameAnchorsOnConfigClose()
-    local db = self.db.profile.unitFrames
-    if not db then return end
-    if not db.General then db.General = {} end
-    
-    -- Only disable if anchors are currently enabled
-    if db.General.ShowEditModeAnchors then
-        db.General.ShowEditModeAnchors = false
-        if self.UnitFrames then
-            self.UnitFrames:UpdateEditModeAnchors()
-        end
-    end
-end
