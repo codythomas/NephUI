@@ -77,9 +77,6 @@ local function CreateBackdrop(frame, bgColor, borderColor)
     end
 end
 
--- ------------------------
--- DRAG AND DROP HELPERS
--- ------------------------
 local function CreateDropTarget(parent, width, height, onReceive)
     local dropTarget = CreateFrame("Frame", nil, parent)
     dropTarget:SetSize(width or 140, height or 40)
@@ -141,8 +138,6 @@ local function CreateDropTarget(parent, width, height, onReceive)
         self.highlight:Hide()
     end)
     
-    -- NOTE: OnUpdate here only runs while Create dialog is open.
-    -- Automatically cleaned up when dialog closes and frame is destroyed.
     dropTarget:SetScript("OnUpdate", function(self, elapsed)
         local cursorType = GetCursorInfo()
         if cursorType == "spell" or cursorType == "item" then
@@ -164,9 +159,7 @@ local runtime = {
     groupFrames = {}, -- [groupKey] = frame
     dragState = {},
     pendingSpecReload = false,
-    externalDragActive = false,  -- NEW: Tracks if dragging spell/item from spellbook/bags
-    externalDragType = nil,       -- NEW: "spell" or "item"
-    externalDragID = nil,         -- NEW: The spell or item ID
+    externalDragActive = false
 }
 
 -- UI state containers
@@ -211,7 +204,7 @@ local function CopyColor(color)
     return { color[1], color[2], color[3], color[4] }
 end
 
--- NEW: Function to copy icon settings from one icon to another
+-- Copy icon settings from one icon to another
 local function CopyIconSettings(sourceIconData, targetIconData)
     if not sourceIconData or not sourceIconData.settings then return end
     if not targetIconData then return end
@@ -897,15 +890,6 @@ local function EnsureEventFrame()
             return
         end
 
-        -- When equipment changes, reload slot icons to check if they should be shown/hidden
-        if event == "PLAYER_EQUIPMENT_CHANGED" or event == "UNIT_INVENTORY_CHANGED" then
-            -- Reload all icons to check slot icon usability
-            -- This will use IsIconLoadable which now checks if slot items are usable
-            if CustomIcons and CustomIcons.LoadDynamicIcons then
-                CustomIcons:LoadDynamicIcons()
-            end
-        end
-
         -- Update all icons when relevant events fire
         UpdateAllIcons()
     end)
@@ -1389,7 +1373,7 @@ local function NormalizeRowGrowth(growth, rowGrowth)
     return rowGrowth
 end
 
--- Consolidated function to set up anchor fade inheritance
+-- Anchor fade inheritance hook
 local function SetupAnchorFadeInheritance(container, settings)
     if not settings.inheritAnchorFade or not settings.anchorFrame or settings.anchorFrame == "" then
         return
@@ -1408,22 +1392,11 @@ local function SetupAnchorFadeInheritance(container, settings)
         return
     end
     
-    -- 1. Hook the standard WoW API for the frame
     hooksecurefunc(anchorFrame, "SetAlpha", function(self, value)
         if container._settings and container._settings.inheritAnchorFade then
             container:SetAlpha(value)
         end
     end)
-    
-    -- 2. ElvUI Specific: Hook ElvUI's internal Fader logic
-    -- Most ElvUI unitframes use a 'fader' table for animations
-    if anchorFrame.fader and anchorFrame.fader.SetAlpha then
-        hooksecurefunc(anchorFrame.fader, "SetAlpha", function(self, value)
-            if container._settings and container._settings.inheritAnchorFade then
-                container:SetAlpha(value)
-            end
-        end)
-    end
     
     container._isHooked = true
     
@@ -1590,9 +1563,6 @@ local function EnsureGroupFrame(groupKey, settings)
     container._settings = settings
     container._groupKey = groupKey
     
-    -- Set up anchor fade inheritance (uses event hooks, not OnUpdate)
-    SetupAnchorFadeInheritance(container, settings)
-
     -- Position the container
     if settings.position then
         local anchorFrame = GetAnchorFrame(settings.anchorFrame)
@@ -1629,7 +1599,6 @@ local function LayoutGroup(groupKey, iconKeys)
     local container = EnsureGroupFrame(groupKey, settings)
     container:Show()
     
-    -- Update anchor fade inheritance (uses event hooks, not OnUpdate)
     SetupAnchorFadeInheritance(container, settings)
 
     local spacing = settings.spacing or 5
@@ -2217,8 +2186,7 @@ local function CreateIconNode(parent, iconKey, iconData, groupKey)
     label:SetText(displayName)
     
     -- NOTE: OnUpdate for drag/drop visual feedback while icon list is visible.
-    -- Automatically cleaned up when RefreshDynamicListUI() destroys and recreates nodes.
-    -- Only updates UI when drag state actually changes (cached in _lastDragState).
+
     node:SetScript("OnUpdate", function(self, elapsed)
         -- Update label with (DROP) indicator when dragging externally
         if runtime.externalDragActive then
@@ -2226,9 +2194,7 @@ local function CreateIconNode(parent, iconKey, iconData, groupKey)
                 label:SetText(displayName .. " (DROP)")
             end
         else
-            if label:GetText():find(" %(DROP%)$") then
-                label:SetText(displayName)
-            end
+            label:SetText(displayName)
         end
         
         -- Trigger highlight update when drag state changes
@@ -2435,17 +2401,13 @@ function CustomIcons:RefreshDynamicListUI()
         headerText:SetText(title)
         
         -- NOTE: OnUpdate for drag/drop visual feedback while icon list is visible.
-        -- Automatically cleaned up when RefreshDynamicListUI() destroys and recreates sections.
-        -- Only updates UI when drag state or hover state actually changes (cached).
         header:SetScript("OnUpdate", function(self, elapsed)
             if runtime.externalDragActive then
                 if not headerText:GetText():find(" %(DROP%)$") then
                     headerText:SetText(title .. " (DROP)")
                 end
             else
-                if headerText:GetText():find(" %(DROP%)$") then
-                    headerText:SetText(title)
-                end
+                headerText:SetText(title)
             end
             
             -- Update highlighting when drag state or hover state changes
@@ -2886,7 +2848,6 @@ function CustomIcons:RefreshDynamicConfigUI()
         }, y)
         y = y + 32
 
-        -- Only show "Hide if Not Usable" toggle for slot-type icons (legacy setting for slots)
         if iconData.type == "slot" then
             Widgets.CreateToggle(uiFrames.configParent, {
                 name = "Hide if Not Usable",
@@ -3316,35 +3277,12 @@ function CustomIcons:BuildDynamicIconsUI(parent)
         
         if cursorType == "spell" or cursorType == "item" then
             runtime.externalDragActive = true
-            runtime.externalDragType = cursorType
-            
-            -- For spells, GetCursorInfo returns spell index, not spell ID. Convert it.
-            if cursorType == "spell" then
-                local spellID = nil
-                if C_SpellBook and C_SpellBook.GetSpellBookItemInfo then
-                    local spellInfo = C_SpellBook.GetSpellBookItemInfo(id1, Enum.SpellBookSpellBank.Player)
-                    if spellInfo and spellInfo.spellID then
-                        spellID = spellInfo.spellID
-                    end
-                end
-                -- Fallback for older API
-                if not spellID then
-                    local _, _, _, _, _, _, sid = GetSpellInfo(id1, "spell")
-                    spellID = sid or id1
-                end
-                runtime.externalDragID = spellID or id1
-            else
-                runtime.externalDragID = id1
-            end
-            
             if not wasActive and uiFrames.listParent and uiFrames.listParent:IsVisible() then
                 CustomIcons:RefreshDynamicListUI()
             end
         else
             if wasActive then
                 runtime.externalDragActive = false
-                runtime.externalDragType = nil
-                runtime.externalDragID = nil
                 
                 if uiFrames.listParent and uiFrames.listParent:IsVisible() then
                     CustomIcons:RefreshDynamicListUI()
