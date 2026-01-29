@@ -3309,6 +3309,49 @@ function CustomIcons:BuildDynamicIconsUI(parent)
 
     CustomIcons:RefreshDynamicListUI()
     CustomIcons:RefreshDynamicConfigUI()
+
+    container:SetScript("OnUpdate", function(self, elapsed)
+        local cursorType, id1, id2 = GetCursorInfo()
+        local wasActive = runtime.externalDragActive
+        
+        if cursorType == "spell" or cursorType == "item" then
+            runtime.externalDragActive = true
+            runtime.externalDragType = cursorType
+            
+            -- For spells, GetCursorInfo returns spell index, not spell ID. Convert it.
+            if cursorType == "spell" then
+                local spellID = nil
+                if C_SpellBook and C_SpellBook.GetSpellBookItemInfo then
+                    local spellInfo = C_SpellBook.GetSpellBookItemInfo(id1, Enum.SpellBookSpellBank.Player)
+                    if spellInfo and spellInfo.spellID then
+                        spellID = spellInfo.spellID
+                    end
+                end
+                -- Fallback for older API
+                if not spellID then
+                    local _, _, _, _, _, _, sid = GetSpellInfo(id1, "spell")
+                    spellID = sid or id1
+                end
+                runtime.externalDragID = spellID or id1
+            else
+                runtime.externalDragID = id1
+            end
+            
+            if not wasActive and uiFrames.listParent and uiFrames.listParent:IsVisible() then
+                CustomIcons:RefreshDynamicListUI()
+            end
+        else
+            if wasActive then
+                runtime.externalDragActive = false
+                runtime.externalDragType = nil
+                runtime.externalDragID = nil
+                
+                if uiFrames.listParent and uiFrames.listParent:IsVisible() then
+                    CustomIcons:RefreshDynamicListUI()
+                end
+            end
+        end
+    end)
 end
 
 -- Creation dialog
@@ -3509,50 +3552,6 @@ local function EnsureAnchorHooks()
         anchorHooked = true
     end
 end
-
-local f = uiFrames.listParent
-f:SetScript("OnUpdate", function(self, elapsed)
-    local cursorType, id1, id2 = GetCursorInfo()
-    local wasActive = runtime.externalDragActive
-    
-    if cursorType == "spell" or cursorType == "item" then
-        runtime.externalDragActive = true
-        runtime.externalDragType = cursorType
-        
-        -- For spells, GetCursorInfo returns spell index, not spell ID. Convert it.
-        if cursorType == "spell" then
-            local spellID = nil
-            if C_SpellBook and C_SpellBook.GetSpellBookItemInfo then
-                local spellInfo = C_SpellBook.GetSpellBookItemInfo(id1, Enum.SpellBookSpellBank.Player)
-                if spellInfo and spellInfo.spellID then
-                    spellID = spellInfo.spellID
-                end
-            end
-            -- Fallback for older API
-            if not spellID then
-                local _, _, _, _, _, _, sid = GetSpellInfo(id1, "spell")
-                spellID = sid or id1
-            end
-            runtime.externalDragID = spellID or id1
-        else
-            runtime.externalDragID = id1
-        end
-        
-        if not wasActive and uiFrames.listParent and uiFrames.listParent:IsVisible() then
-            CustomIcons:RefreshDynamicListUI()
-        end
-    else
-        if wasActive then
-            runtime.externalDragActive = false
-            runtime.externalDragType = nil
-            runtime.externalDragID = nil
-            
-            if uiFrames.listParent and uiFrames.listParent:IsVisible() then
-                CustomIcons:RefreshDynamicListUI()
-            end
-        end
-    end
-end)
 
 -- Hook into GUI renderer
 CustomIcons.BuildDynamicIconsUI = CustomIcons.BuildDynamicIconsUI
