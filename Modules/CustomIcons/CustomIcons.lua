@@ -77,12 +77,94 @@ local function CreateBackdrop(frame, bgColor, borderColor)
     end
 end
 
+-- ------------------------
+-- DRAG AND DROP HELPERS
+-- ------------------------
+local function CreateDropTarget(parent, width, height, onReceive)
+    local dropTarget = CreateFrame("Frame", nil, parent)
+    dropTarget:SetSize(width or 140, height or 40)
+    dropTarget:EnableMouse(true)
+    dropTarget:RegisterForDrag("LeftButton")
+    
+    CreateBackdrop(dropTarget, {0.1, 0.1, 0.1, 0.8}, {0.3, 0.3, 0.3, 1})
+    
+    local text = dropTarget:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    text:SetPoint("CENTER")
+    text:SetText("Drop Spell/Item")
+    text:SetTextColor(0.6, 0.6, 0.6, 1)
+    dropTarget.text = text
+    
+    local highlightTex = dropTarget:CreateTexture(nil, "BACKGROUND")
+    highlightTex:SetAllPoints()
+    highlightTex:SetColorTexture(0.3, 0.6, 1, 0.3)
+    highlightTex:Hide()
+    dropTarget.highlight = highlightTex
+    
+    dropTarget:SetScript("OnReceiveDrag", function(self)
+        local cursorType, id1, id2 = GetCursorInfo()
+        if cursorType == "spell" then
+            if onReceive then
+                onReceive("spell", id1)
+            end
+            ClearCursor()
+        elseif cursorType == "item" then
+            if onReceive then
+                onReceive("item", id1)
+            end
+            ClearCursor()
+        end
+    end)
+    
+    dropTarget:SetScript("OnMouseUp", function(self)
+        local cursorType, id1, id2 = GetCursorInfo()
+        if cursorType == "spell" then
+            if onReceive then
+                onReceive("spell", id1)
+            end
+            ClearCursor()
+        elseif cursorType == "item" then
+            if onReceive then
+                onReceive("item", id1)
+            end
+            ClearCursor()
+        end
+    end)
+    
+    dropTarget:SetScript("OnEnter", function(self)
+        local cursorType = GetCursorInfo()
+        if cursorType == "spell" or cursorType == "item" then
+            self.highlight:Show()
+        end
+    end)
+    
+    dropTarget:SetScript("OnLeave", function(self)
+        self.highlight:Hide()
+    end)
+    
+    dropTarget:SetScript("OnUpdate", function(self, elapsed)
+        local cursorType = GetCursorInfo()
+        if cursorType == "spell" or cursorType == "item" then
+            if self:IsMouseOver() and not self.highlight:IsShown() then
+                self.highlight:Show()
+            end
+        else
+            if self.highlight:IsShown() then
+                self.highlight:Hide()
+            end
+        end
+    end)
+    
+    return dropTarget
+end
 -- Runtime containers
 local runtime = {
     iconFrames = {},  -- [iconKey] = frame
     groupFrames = {}, -- [groupKey] = frame
     dragState = {},
     pendingSpecReload = false,
+    externalDragActive = false,  -- NEW: Tracks if dragging spell/item from spellbook/bags
+    externalDragType = nil,       -- NEW: "spell" or "item"
+    externalDragID = nil,         -- NEW: The spell or item ID
 }
 
 -- UI state containers
@@ -122,9 +204,134 @@ local DEFAULT_ICON_SETTINGS = {
     },
 }
 
+-- Global frame to detect external spell/item dragging
+local dragDetector = CreateFrame("Frame")
+dragDetector:SetScript("OnUpdate", function(self, elapsed)
+    local cursorType, id1, id2 = GetCursorInfo()
+    local wasActive = runtime.externalDragActive
+    
+    if cursorType == "spell" or cursorType == "item" then
+        runtime.externalDragActive = true
+        runtime.externalDragType = cursorType
+        
+        -- For spells, GetCursorInfo returns spell index, not spell ID. Convert it.
+        if cursorType == "spell" then
+            local spellID = nil
+            if C_SpellBook and C_SpellBook.GetSpellBookItemInfo then
+                local spellInfo = C_SpellBook.GetSpellBookItemInfo(id1, Enum.SpellBookSpellBank.Player)
+                if spellInfo and spellInfo.spellID then
+                    spellID = spellInfo.spellID
+                end
+            end
+            -- Fallback for older API
+            if not spellID then
+                local _, _, _, _, _, _, sid = GetSpellInfo(id1, "spell")
+                spellID = sid or id1
+            end
+            runtime.externalDragID = spellID or id1
+        else
+            runtime.externalDragID = id1
+        end
+        
+        if not wasActive and uiFrames.listParent and uiFrames.listParent:IsVisible() then
+            CustomIcons:RefreshDynamicListUI()
+        end
+    else
+        if wasActive then
+            runtime.externalDragActive = false
+            runtime.externalDragType = nil
+            runtime.externalDragID = nil
+            
+            if uiFrames.listParent and uiFrames.listParent:IsVisible() then
+                CustomIcons:RefreshDynamicListUI()
+            end
+        end
+    end
+end)
+
 local function CopyColor(color)
     if type(color) ~= "table" then return nil end
     return { color[1], color[2], color[3], color[4] }
+end
+
+-- NEW: Function to copy icon settings from one icon to another
+local function CopyIconSettings(sourceIconData, targetIconData)
+    if not sourceIconData or not sourceIconData.settings then return end
+    if not targetIconData then return end
+    
+    targetIconData.settings = targetIconData.settings or {}
+    local src = sourceIconData.settings
+    local tgt = targetIconData.settings
+    
+    -- Copy basic settings
+    tgt.iconSize = src.iconSize
+    tgt.aspectRatio = src.aspectRatio
+    tgt.borderSize = src.borderSize
+    tgt.borderColor = CopyColor(src.borderColor)
+    tgt.showCharges = src.showCharges
+    tgt.showCooldown = src.showCooldown
+    tgt.showGCDSwipe = src.showGCDSwipe
+    tgt.desaturateWhenUnusable = src.desaturateWhenUnusable
+    tgt.desaturateOnCooldown = src.desaturateOnCooldown
+    tgt.hideIfNotUsable = src.hideIfNotUsable
+    
+    -- Copy count settings
+    if src.countSettings then
+        tgt.countSettings = tgt.countSettings or {}
+        tgt.countSettings.size = src.countSettings.size
+        tgt.countSettings.anchor = src.countSettings.anchor
+        tgt.countSettings.offsetX = src.countSettings.offsetX
+        tgt.countSettings.offsetY = src.countSettings.offsetY
+        tgt.countSettings.color = CopyColor(src.countSettings.color)
+        tgt.countSettings.font = src.countSettings.font
+    end
+    
+    -- Copy cooldown settings
+    if src.cooldownSettings then
+        tgt.cooldownSettings = tgt.cooldownSettings or {}
+        tgt.cooldownSettings.size = src.cooldownSettings.size
+        tgt.cooldownSettings.color = CopyColor(src.cooldownSettings.color)
+    end
+    
+    -- Copy load conditions (including spec settings)
+    if src.loadConditions then
+        tgt.loadConditions = tgt.loadConditions or {}
+        tgt.loadConditions.enabled = src.loadConditions.enabled
+        tgt.loadConditions.inCombat = src.loadConditions.inCombat
+        tgt.loadConditions.outOfCombat = src.loadConditions.outOfCombat
+        
+        -- Deep copy specs table
+        if src.loadConditions.specs then
+            tgt.loadConditions.specs = {}
+            for specID, enabled in pairs(src.loadConditions.specs) do
+                tgt.loadConditions.specs[specID] = enabled
+            end
+        end
+    end
+end
+
+-- Helper function to get the actual spell ID from cursor info
+local function GetSpellIDFromCursor(cursorType, cursorData)
+    if cursorType ~= "spell" then
+        return cursorData
+    end
+    
+    -- GetCursorInfo returns spell index for spells, not spell ID
+    local spellID = nil
+    if C_SpellBook and C_SpellBook.GetSpellBookItemInfo then
+        local spellInfo = C_SpellBook.GetSpellBookItemInfo(cursorData, Enum.SpellBookSpellBank.Player)
+        if spellInfo and spellInfo.spellID then
+            spellID = spellInfo.spellID
+        end
+    end
+    
+    -- Fallback for older API
+    if not spellID then
+        local _, _, _, _, _, _, sid = GetSpellInfo(cursorData, "spell")
+        spellID = sid or cursorData
+    end
+    
+    return spellID or cursorData
 end
 
 local function EnsureIconSettings(iconData)
@@ -830,8 +1037,25 @@ end
 
 local function IsIconLoadable(iconData)
     if not iconData then return false end
+    
+    -- Check hideWhenNotFound setting (applies to all types)
+    local hideWhenNotFound = iconData.settings and iconData.settings.hideWhenNotFound
+    
     if iconData.type == "spell" then
-        return IsSpellInPlayerBook(iconData.id)
+        local spellKnown = IsSpellInPlayerBook(iconData.id)
+        if hideWhenNotFound and not spellKnown then
+            return false
+        end
+        return spellKnown
+    elseif iconData.type == "item" then
+        -- For items, check if it's in inventory
+        if hideWhenNotFound then
+            local itemCount = C_Item.GetItemCount(iconData.id, false, false, false)
+            if not itemCount or itemCount == 0 then
+                return false
+            end
+        end
+        return true
     elseif iconData.type == "slot" then
         -- Check if hideIfNotUsable is enabled (defaults to true)
         local hideIfNotUsable = iconData.settings and iconData.settings.hideIfNotUsable
@@ -955,6 +1179,14 @@ function CustomIcons:ShowLoadConditionsWindow(iconKey, iconData)
     enableBtn:SetScript("OnClick", function(self)
         lc.enabled = self:GetChecked() or false
         if RefreshAllLayouts then RefreshAllLayouts() end
+        -- Reload icons to apply load condition changes
+        if CustomIcons and CustomIcons.LoadDynamicIcons then
+            CustomIcons:LoadDynamicIcons()
+        end
+        -- Refresh config UI to update spec display
+        if CustomIcons and CustomIcons.RefreshDynamicConfigUI then
+            CustomIcons:RefreshDynamicConfigUI()
+        end
     end)
 
     -- Specs header
@@ -994,6 +1226,14 @@ function CustomIcons:ShowLoadConditionsWindow(iconKey, iconData)
         toggle:SetScript("OnClick", function(self)
             lc.specs[spec.id] = self:GetChecked() or false
             if RefreshAllLayouts then RefreshAllLayouts() end
+            -- Reload icons to apply spec changes
+            if CustomIcons and CustomIcons.LoadDynamicIcons then
+                CustomIcons:LoadDynamicIcons()
+            end
+            -- Refresh config UI to update spec display
+            if CustomIcons and CustomIcons.RefreshDynamicConfigUI then
+                CustomIcons:RefreshDynamicConfigUI()
+            end
         end)
 
         y = y + 28
@@ -1350,6 +1590,52 @@ local function EnsureGroupFrame(groupKey, settings)
     container.anchorText = anchorText
     container._settings = settings
     container._groupKey = groupKey
+    
+    -- Inherit Anchor Fade: Watch anchor frame's alpha and match it
+    if settings.inheritAnchorFade and settings.anchorFrame and settings.anchorFrame ~= "" then
+        local anchorFrame = GetAnchorFrame(settings.anchorFrame)
+        if anchorFrame and anchorFrame ~= UIParent then
+            -- Store last known alpha to avoid constant updates
+            container._lastAnchorAlpha = nil
+            
+            -- Use OnUpdate for efficient alpha monitoring
+            container:SetScript("OnUpdate", function(self, elapsed)
+                -- Only check if inherit is enabled
+                if not self._settings.inheritAnchorFade then
+                    if self:GetScript("OnUpdate") then
+                        self:SetScript("OnUpdate", nil)
+                    end
+                    return
+                end
+                
+                -- Get anchor frame (may have changed)
+                local anchorFrameName = self._settings.anchorFrame
+                if not anchorFrameName or anchorFrameName == "" then
+                    self:SetScript("OnUpdate", nil)
+                    return
+                end
+                
+                local targetFrame = GetAnchorFrame(anchorFrameName)
+                if not targetFrame or targetFrame == UIParent then
+                    self:SetScript("OnUpdate", nil)
+                    return
+                end
+                
+                -- Check if frame exists and get its alpha
+                local success, currentAlpha = pcall(function() return targetFrame:GetAlpha() end)
+                if not success then
+                    self:SetScript("OnUpdate", nil)
+                    return
+                end
+                
+                -- Only update if alpha changed
+                if self._lastAnchorAlpha ~= currentAlpha then
+                    self._lastAnchorAlpha = currentAlpha
+                    pcall(function() self:SetAlpha(currentAlpha) end)
+                end
+            end)
+        end
+    end
 
     -- Position the container
     if settings.position then
@@ -1386,6 +1672,53 @@ local function LayoutGroup(groupKey, iconKeys)
 
     local container = EnsureGroupFrame(groupKey, settings)
     container:Show()
+    
+    -- Update fade inheritance when layout is refreshed
+    if settings.inheritAnchorFade and settings.anchorFrame and settings.anchorFrame ~= "" then
+        local anchorFrame = GetAnchorFrame(settings.anchorFrame)
+        if anchorFrame and anchorFrame ~= UIParent then
+            -- Enable OnUpdate if not already running
+            if not container:GetScript("OnUpdate") then
+                container._lastAnchorAlpha = nil
+                container:SetScript("OnUpdate", function(self, elapsed)
+                    if not self._settings.inheritAnchorFade then
+                        self:SetScript("OnUpdate", nil)
+                        return
+                    end
+                    
+                    local anchorFrameName = self._settings.anchorFrame
+                    if not anchorFrameName or anchorFrameName == "" then
+                        self:SetScript("OnUpdate", nil)
+                        return
+                    end
+                    
+                    local targetFrame = GetAnchorFrame(anchorFrameName)
+                    if not targetFrame or targetFrame == UIParent then
+                        self:SetScript("OnUpdate", nil)
+                        return
+                    end
+                    
+                    local success, currentAlpha = pcall(function() return targetFrame:GetAlpha() end)
+                    if not success then
+                        self:SetScript("OnUpdate", nil)
+                        return
+                    end
+                    
+                    if self._lastAnchorAlpha ~= currentAlpha then
+                        self._lastAnchorAlpha = currentAlpha
+                        pcall(function() self:SetAlpha(currentAlpha) end)
+                    end
+                end)
+            end
+        end
+    else
+        -- Disable fade inheritance
+        if container:GetScript("OnUpdate") then
+            container:SetScript("OnUpdate", nil)
+        end
+        -- Reset alpha to full visibility
+        container:SetAlpha(1)
+    end
 
     local spacing = settings.spacing or 5
     local maxPerRow = settings.maxIconsPerRow
@@ -1400,7 +1733,8 @@ local function LayoutGroup(groupKey, iconKeys)
 
     for _, iconKey in ipairs(iconKeys) do
         local iconFrame = runtime.iconFrames[iconKey]
-        if iconFrame then
+        -- Skip if frame doesn't exist or is hidden (hideWhenNotFound)
+        if iconFrame and iconFrame:IsShown() then
             local iconData = db.iconData[iconKey]
             local borderSize = 0
             if iconData then
@@ -1408,7 +1742,7 @@ local function LayoutGroup(groupKey, iconKeys)
                 borderSize = math.max((iconData.settings and iconData.settings.borderSize) or 0, 0)
             end
             local w, h = iconFrame:GetWidth(), iconFrame:GetHeight()
-            table.insert(iconSizes, {width = w + borderSize * 2, height = h + borderSize * 2, border = borderSize})
+            table.insert(iconSizes, {iconKey = iconKey, width = w + borderSize * 2, height = h + borderSize * 2, border = borderSize})
         end
     end
 
@@ -1504,7 +1838,8 @@ local function LayoutGroup(groupKey, iconKeys)
     local contentWidth = maxRight - minLeft
     local contentHeight = maxTop - minBottom
 
-    for i, iconKey in ipairs(iconKeys) do
+    for i, sizeData in ipairs(iconSizes) do
+        local iconKey = sizeData.iconKey
         local iconFrame = runtime.iconFrames[iconKey]
         local pos = positions[i]
         if iconFrame and pos then
@@ -1649,7 +1984,7 @@ end
 -- ------------------------
 -- Public API
 -- ------------------------
-function CustomIcons:AddDynamicIcon(iconData)
+function CustomIcons:AddDynamicIcon(iconData, targetGroupKey)
     local db = GetDynamicDB()
     local iconKey = iconData.key or ("icon_" .. tostring(math.floor(GetTime() * 1000)))
     iconData.key = iconKey
@@ -1658,7 +1993,12 @@ function CustomIcons:AddDynamicIcon(iconData)
 
     db.iconData[iconKey] = iconData
     EnsureLoadConditions(db.iconData[iconKey])
-    db.ungrouped[iconKey] = true
+    -- Place in specified group or ungrouped
+    if targetGroupKey and targetGroupKey ~= "ungrouped" and db.groups[targetGroupKey] then
+        table.insert(db.groups[targetGroupKey].icons, iconKey)
+    else
+        db.ungrouped[iconKey] = true
+    end
     db.ungroupedPositions = db.ungroupedPositions or {}
     db.ungroupedPositions[iconKey] = db.ungroupedPositions[iconKey] or BuildDefaultUngroupedPositionSettings()
 
@@ -1888,7 +2228,7 @@ local function MatchesSearch(iconKey, iconData)
 end
 
 local function CreateIconNode(parent, iconKey, iconData, groupKey)
-    local node = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    local node = CreateFrame("Frame", "NephUI_IconListNode_" .. iconKey, parent, "BackdropTemplate")
     node:SetSize(240, 42)
     node:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -1899,22 +2239,31 @@ local function CreateIconNode(parent, iconKey, iconData, groupKey)
     node:SetBackdropColor(THEME.bgMedium[1], THEME.bgMedium[2], THEME.bgMedium[3], 0.75)
     node:SetBackdropBorderColor(THEME.border[1], THEME.border[2], THEME.border[3], 0.9)
     node._iconKey = iconKey
+    node._groupKey = groupKey
     node._hover = false
 
     local function applyNodeHighlight()
         local isSelected = uiState.selectedIcon == iconKey
+        -- Show white border when dragging (not just when hovering)
+        local isDragTarget = runtime.externalDragActive
         local bg = THEME.bgMedium
         local border = THEME.border
         local alpha = 0.75
+        
         if isSelected then
             bg = THEME.bgDark
             border = THEME.primary
             alpha = 0.95
+        elseif isDragTarget then
+            -- White border for external drop target (always when dragging)
+            border = {1, 1, 1}  -- White border
+            alpha = 0.9
         elseif node._hover then
             bg = THEME.bgDark
             border = THEME.primary
             alpha = 0.85
         end
+        
         node:SetBackdropColor(bg[1], bg[2], bg[3], alpha)
         node:SetBackdropBorderColor(border[1], border[2], border[3], 1)
     end
@@ -1949,7 +2298,31 @@ local function CreateIconNode(parent, iconKey, iconData, groupKey)
     elseif iconData.type == "slot" then
         displayName = "Slot " .. tostring(iconData.slotID or "")
     end
+    -- Store original display name
+    node._originalDisplayName = displayName
+    
+    -- Initially set the label
     label:SetText(displayName)
+    
+    -- OnUpdate to dynamically update label and highlighting during drag
+    node:SetScript("OnUpdate", function(self, elapsed)
+        -- Update label with (DROP) indicator when dragging externally
+        if runtime.externalDragActive then
+            if not label:GetText():find(" %(DROP%)$") then
+                label:SetText(displayName .. " (DROP)")
+            end
+        else
+            if label:GetText():find(" %(DROP%)$") then
+                label:SetText(displayName)
+            end
+        end
+        
+        -- Trigger highlight update when drag state changes
+        if runtime.externalDragActive ~= self._lastDragState then
+            self._lastDragState = runtime.externalDragActive
+            applyNodeHighlight()
+        end
+    end)
 
     local badge = node:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     badge:SetPoint("LEFT", label, "LEFT", 0, -12)
@@ -1963,7 +2336,30 @@ local function CreateIconNode(parent, iconKey, iconData, groupKey)
         CustomIcons:ConfirmDeleteIcon(iconKey, displayName)
     end)
 
-    node:SetScript("OnMouseUp", function()
+    node:SetScript("OnMouseUp", function(self, button)
+        if button == "LeftButton" and runtime.externalDragActive then
+            local cursorType, id1 = GetCursorInfo()
+            if cursorType == "spell" or cursorType == "item" then
+                -- Convert spell index to spell ID if needed
+                local actualID = GetSpellIDFromCursor(cursorType, id1)
+                
+                -- Create new icon copying settings from this icon
+                local newIconData = {
+                    type = cursorType,
+                    id = actualID,
+                    settings = {}
+                }
+                EnsureIconSettings(newIconData)
+                CopyIconSettings(iconData, newIconData)
+                
+                CustomIcons:AddDynamicIcon(newIconData, groupKey)
+                ClearCursor()
+                CustomIcons:RefreshDynamicListUI()
+                return
+            end
+        end
+        
+        -- Original behavior
         uiState.selectedIcon = iconKey
         uiState.selectedGroup = nil
         CustomIcons:RefreshDynamicListUI()
@@ -1982,6 +2378,29 @@ local function CreateIconNode(parent, iconKey, iconData, groupKey)
         applyNodeHighlight()
         if runtime.dragState.dragging then
             runtime.dragState.dropBefore = nil
+        end
+    end)
+
+    -- Handle external spell/item drops on icon node
+    node:SetScript("OnReceiveDrag", function(self)
+        if not runtime.externalDragActive then return end
+        
+        local cursorType, id1 = GetCursorInfo()
+        if cursorType == "spell" or cursorType == "item" then
+            -- Convert spell index to spell ID if needed
+            local actualID = GetSpellIDFromCursor(cursorType, id1)
+            
+            local newIconData = {
+                type = cursorType,
+                id = actualID,
+                settings = {}
+            }
+            EnsureIconSettings(newIconData)
+            CopyIconSettings(iconData, newIconData)
+            
+            CustomIcons:AddDynamicIcon(newIconData, groupKey)
+            ClearCursor()
+            CustomIcons:RefreshDynamicListUI()
         end
     end)
 
@@ -2045,7 +2464,8 @@ function CustomIcons:RefreshDynamicListUI()
         local isSelectedGroup = uiState.selectedGroup == groupKey
         local headerHover = false
 
-        local box = CreateFrame("Frame", nil, uiFrames.listParent, "BackdropTemplate")
+        local box = CreateFrame("Frame", "NephUI_GroupListBox_" .. groupKey, uiFrames.listParent, "BackdropTemplate")
+        box._groupKey = groupKey
         box:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
@@ -2057,7 +2477,8 @@ function CustomIcons:RefreshDynamicListUI()
         box:SetPoint("TOPLEFT", uiFrames.listParent, "TOPLEFT", -2, y)
         box:SetPoint("TOPRIGHT", uiFrames.listParent, "TOPRIGHT", 2, y)
 
-        local header = CreateFrame("Button", nil, box)
+        local header = CreateFrame("Button", "NephUI_GroupListHeader_" .. groupKey, box)
+        header._groupKey = groupKey
         header:SetPoint("TOPLEFT", box, "TOPLEFT", 4, -4)
         header:SetPoint("TOPRIGHT", box, "TOPRIGHT", -4, -4)
         header:SetHeight(22)
@@ -2065,8 +2486,6 @@ function CustomIcons:RefreshDynamicListUI()
         local headerText = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         headerText:SetPoint("LEFT", header, "LEFT", 4, 0)
         headerText:SetTextColor(THEME.primary[1], THEME.primary[2], THEME.primary[3], 1)
-        headerText:SetText(title)
-
         local arrowBtn = CreateFrame("Button", nil, header)
         arrowBtn:SetSize(24, 24)
         arrowBtn:SetPoint("RIGHT", header, "RIGHT", -2, 0)
@@ -2081,12 +2500,46 @@ function CustomIcons:RefreshDynamicListUI()
         arrowBtn:SetHighlightTexture("Interface\\Buttons\\UI-Listbox-Highlight2", "ADD")
 
         local function applyBoxHighlight()
+            -- Show white border when dragging (not just when hovering)
+            local isDragTarget = runtime.externalDragActive
             local bg = isSelectedGroup and THEME.bgDark or THEME.bgMedium
             local alpha = isSelectedGroup and 0.9 or 0.6
             local border = (isSelectedGroup or headerHover) and THEME.primary or THEME.border
+            
+            -- White border for external drag target (always when dragging)
+            if isDragTarget then
+                border = {1, 1, 1}  -- White border
+            end
+            
             box:SetBackdropColor(bg[1], bg[2], bg[3], alpha)
             box:SetBackdropBorderColor(border[1], border[2], border[3], 1)
         end
+        
+        -- Store original title
+        header._originalTitle = title
+        -- Initially set the title
+        headerText:SetText(title)
+        
+        -- OnUpdate to dynamically update title during drag
+        header:SetScript("OnUpdate", function(self, elapsed)
+            if runtime.externalDragActive then
+                if not headerText:GetText():find(" %(DROP%)$") then
+                    headerText:SetText(title .. " (DROP)")
+                end
+            else
+                if headerText:GetText():find(" %(DROP%)$") then
+                    headerText:SetText(title)
+                end
+            end
+            
+            -- Update highlighting when drag state or hover state changes
+            if runtime.externalDragActive ~= self._lastDragState or headerHover ~= self._lastHoverState then
+                self._lastDragState = runtime.externalDragActive
+                self._lastHoverState = headerHover
+                applyBoxHighlight()
+            end
+        end)
+        
         applyBoxHighlight()
 
         header:SetScript("OnEnter", function()
@@ -2103,7 +2556,52 @@ function CustomIcons:RefreshDynamicListUI()
             end
             applyBoxHighlight()
         end)
-        header:SetScript("OnMouseUp", function()
+        
+        -- Handle external spell/item drops on group header
+        header:SetScript("OnReceiveDrag", function(self)
+            if not runtime.externalDragActive then return end
+            
+            local cursorType, id1 = GetCursorInfo()
+            if cursorType == "spell" or cursorType == "item" then
+                -- Convert spell index to spell ID if needed
+                local actualID = GetSpellIDFromCursor(cursorType, id1)
+                
+                local iconData = {
+                    type = cursorType,
+                    id = actualID,
+                    settings = {}
+                }
+                EnsureIconSettings(iconData)
+                
+                CustomIcons:AddDynamicIcon(iconData, groupKey)
+                ClearCursor()
+                CustomIcons:RefreshDynamicListUI()
+            end
+        end)
+
+        header:SetScript("OnMouseUp", function(self, button)
+            if button == "LeftButton" and runtime.externalDragActive then
+                local cursorType, id1 = GetCursorInfo()
+                if cursorType == "spell" or cursorType == "item" then
+                    -- Convert spell index to spell ID if needed
+                    local actualID = GetSpellIDFromCursor(cursorType, id1)
+                    
+                    -- Create icon with default settings in this group
+                    local iconData = {
+                        type = cursorType,
+                        id = actualID,
+                        settings = {}
+                    }
+                    EnsureIconSettings(iconData)
+                    
+                    CustomIcons:AddDynamicIcon(iconData, groupKey)
+                    ClearCursor()
+                    CustomIcons:RefreshDynamicListUI()
+                    return
+                end
+            end
+            
+            -- Original behavior
             uiState.selectedGroup = groupKey
             uiState.selectedIcon = nil
             isSelectedGroup = true
@@ -2175,9 +2673,19 @@ end
 
 function CustomIcons:RefreshDynamicConfigUI()
     if not uiFrames.configParent then return end
+    
+    -- Clear child frames
     for _, child in ipairs({uiFrames.configParent:GetChildren()}) do
         child:Hide()
         child:SetParent(nil)
+    end
+    
+    -- Clear font strings and textures (regions)
+    for _, region in ipairs({uiFrames.configParent:GetRegions()}) do
+        if region:GetObjectType() == "FontString" or region:GetObjectType() == "Texture" then
+            region:Hide()
+            region:SetParent(nil)
+        end
     end
 
     local db = GetDynamicDB()
@@ -2443,8 +2951,26 @@ function CustomIcons:RefreshDynamicConfigUI()
             width = "full",
         }, y)
         y = y + 32
+        
+        -- "Hide When Not Found" toggle for all icon types
+        Widgets.CreateToggle(uiFrames.configParent, {
+            name = "Hide When Not Found",
+            desc = "Hide icon when spell is not known or item is not in inventory",
+            get = function() return iconData.settings.hideWhenNotFound == true end,
+            set = function(_, val)
+                iconData.settings.hideWhenNotFound = val
+                -- Reload icons to apply the change immediately
+                if CustomIcons and CustomIcons.LoadDynamicIcons then
+                    CustomIcons:LoadDynamicIcons()
+                end
+                RefreshAllLayouts()
+                CustomIcons:RefreshDynamicConfigUI()
+            end,
+            width = "full",
+        }, y)
+        y = y + 32
 
-        -- Only show "Hide if Not Usable" toggle for slot-type icons
+        -- Only show "Hide if Not Usable" toggle for slot-type icons (legacy setting for slots)
         if iconData.type == "slot" then
             Widgets.CreateToggle(uiFrames.configParent, {
                 name = "Hide if Not Usable",
@@ -2468,6 +2994,118 @@ function CustomIcons:RefreshDynamicConfigUI()
             func = function() CustomIcons:ShowLoadConditionsWindow(iconKey, iconData) end,
             width = "full",
         }, y)
+        y = y + 36
+        
+        -- Display enabled specs underneath Load Conditions button
+        -- Only show if load conditions are enabled and specs are checked
+        if iconData.settings and iconData.settings.loadConditions and 
+           iconData.settings.loadConditions.enabled and 
+           iconData.settings.loadConditions.specs then
+            local enabledSpecs = {}
+            for specID, enabled in pairs(iconData.settings.loadConditions.specs) do
+                if enabled then
+                    -- Find the spec name from SPEC_LIST
+                    for _, spec in ipairs(SPEC_LIST) do
+                        if spec.id == specID then
+                            table.insert(enabledSpecs, spec.name)
+                            break
+                        end
+                    end
+                end
+            end
+            
+            if #enabledSpecs > 0 then
+                table.sort(enabledSpecs)
+                local specText = uiFrames.configParent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                specText:SetPoint("TOPLEFT", uiFrames.configParent, "TOPLEFT", 12, -y)
+                specText:SetPoint("TOPRIGHT", uiFrames.configParent, "TOPRIGHT", -12, -y)
+                specText:SetJustifyH("LEFT")
+                specText:SetTextColor(0.7, 0.7, 0.7, 1)
+                specText:SetText("Specs: " .. table.concat(enabledSpecs, ", "))
+                y = y + 20
+            end
+        end
+        
+        -- Add "Apply Settings to Parent Group" button
+        if iconKey then
+            -- Find which group this icon belongs to
+            local parentGroupKey = nil
+            local parentGroupName = "Unknown"
+            
+            for gKey, group in pairs(db.groups) do
+                if group.icons then
+                    for _, iKey in ipairs(group.icons) do
+                        if iKey == iconKey then
+                            parentGroupKey = gKey
+                            parentGroupName = GetGroupDisplayName(gKey)
+                            break
+                        end
+                    end
+                end
+                if parentGroupKey then break end
+            end
+            
+            -- Check if in ungrouped
+            if not parentGroupKey and db.ungrouped[iconKey] then
+                parentGroupKey = "ungrouped"
+                parentGroupName = "Ungrouped Icons"
+            end
+            
+            if parentGroupKey then
+                -- Add header label
+                local headerLabel = uiFrames.configParent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+                headerLabel:SetPoint("TOPLEFT", uiFrames.configParent, "TOPLEFT", 12, -y)
+                headerLabel:SetPoint("TOPRIGHT", uiFrames.configParent, "TOPRIGHT", -12, -y)
+                headerLabel:SetJustifyH("LEFT")
+                headerLabel:SetTextColor(THEME.primary[1], THEME.primary[2], THEME.primary[3], 1)
+                headerLabel:SetText("Apply Settings to Parent Group (" .. parentGroupName .. "):")
+                y = y + 24
+                
+                -- Add compact button
+                Widgets.CreateExecute(uiFrames.configParent, {
+                    name = "Apply To All",
+                    func = function()
+                        -- Get all icons in the parent group
+                        local targetIcons = {}
+                        if parentGroupKey == "ungrouped" then
+                            for iKey in pairs(db.ungrouped) do
+                                if iKey ~= iconKey then  -- Don't apply to self
+                                    table.insert(targetIcons, iKey)
+                                end
+                            end
+                        else
+                            local group = db.groups[parentGroupKey]
+                            if group and group.icons then
+                                for _, iKey in ipairs(group.icons) do
+                                    if iKey ~= iconKey then  -- Don't apply to self
+                                        table.insert(targetIcons, iKey)
+                                    end
+                                end
+                            end
+                        end
+                        
+                        -- Apply current icon's settings to all group siblings
+                        for _, targetKey in ipairs(targetIcons) do
+                            local targetData = db.iconData[targetKey]
+                            if targetData then
+                                CopyIconSettings(iconData, targetData)
+                            end
+                        end
+                        
+                        -- Reload icons and refresh UI
+                        if CustomIcons and CustomIcons.LoadDynamicIcons then
+                            CustomIcons:LoadDynamicIcons()
+                        end
+                        RefreshAllLayouts()
+                        
+                        -- Show confirmation
+                        UIErrorsFrame:AddMessage("Settings applied to " .. #targetIcons .. " icon(s) in " .. parentGroupName, 0, 1, 0)
+                    end,
+                    width = "full",
+                }, y)
+                y = y + 36
+            end
+        end
     end
 
     local function ensureGroupDefaults(group)
@@ -2589,6 +3227,18 @@ function CustomIcons:RefreshDynamicConfigUI()
             width = "full",
         }, y)
         y = y + 40
+        
+        Widgets.CreateToggle(uiFrames.configParent, {
+            name = "Inherit Anchor Fade",
+            desc = "When enabled, the group will fade in/out with its anchor frame",
+            get = function() return s.inheritAnchorFade == true end,
+            set = function(_, val)
+                s.inheritAnchorFade = val
+                RefreshAllLayouts()
+            end,
+            width = "full",
+        }, y)
+        y = y + 32
 
         Widgets.CreateExecute(uiFrames.configParent, {
             name = "Delete Group",
@@ -2785,7 +3435,7 @@ end
 function CustomIcons:ShowCreateIconDialog()
     if not uiFrames.createFrame then
         local f = CreateFrame("Frame", "NephUI_DynIconCreate", UIParent, "BackdropTemplate")
-        f:SetSize(360, 220)
+        f:SetSize(360, 290)
         f:SetPoint("CENTER")
         f:SetFrameStrata("TOOLTIP")
         CreateBackdrop(f, THEME.bgDark, THEME.border)
@@ -2834,6 +3484,17 @@ function CustomIcons:ShowCreateIconDialog()
         idLabel:SetPoint("BOTTOMLEFT", idBox, "TOPLEFT", 2, 2)
         idLabel:SetText("Spell or Item ID")
 
+        -- Drop target for drag-and-drop
+        local dropTarget = CreateDropTarget(f, 180, 50, function(itemType, itemID)
+            f.selectedType = itemType
+            for _, b in pairs(f.typeButtons) do b:SetChecked(false) end
+            f.typeButtons[itemType]:SetChecked(true)
+            idBox:SetText(tostring(itemID))
+            f.slotDropdown:Hide()
+            idBox:Show()
+        end)
+        dropTarget:SetPoint("TOPLEFT", idBox, "BOTTOMLEFT", 0, -10)
+        f.dropTarget = dropTarget
         -- Slot dropdown
         local dropdown = CreateFrame("Frame", "NephUI_DynIconCreateSlotDrop", f, "UIDropDownMenuTemplate")
         dropdown:SetPoint("TOPLEFT", idBox, "TOPLEFT", -16, -2)
