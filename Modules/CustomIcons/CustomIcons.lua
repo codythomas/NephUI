@@ -141,6 +141,8 @@ local function CreateDropTarget(parent, width, height, onReceive)
         self.highlight:Hide()
     end)
     
+    -- NOTE: OnUpdate here only runs while Create dialog is open.
+    -- Automatically cleaned up when dialog closes and frame is destroyed.
     dropTarget:SetScript("OnUpdate", function(self, elapsed)
         local cursorType = GetCursorInfo()
         if cursorType == "spell" or cursorType == "item" then
@@ -203,51 +205,6 @@ local DEFAULT_ICON_SETTINGS = {
         color = { 1, 1, 1, 1 },
     },
 }
-
--- Global frame to detect external spell/item dragging
-local dragDetector = CreateFrame("Frame")
-dragDetector:SetScript("OnUpdate", function(self, elapsed)
-    local cursorType, id1, id2 = GetCursorInfo()
-    local wasActive = runtime.externalDragActive
-    
-    if cursorType == "spell" or cursorType == "item" then
-        runtime.externalDragActive = true
-        runtime.externalDragType = cursorType
-        
-        -- For spells, GetCursorInfo returns spell index, not spell ID. Convert it.
-        if cursorType == "spell" then
-            local spellID = nil
-            if C_SpellBook and C_SpellBook.GetSpellBookItemInfo then
-                local spellInfo = C_SpellBook.GetSpellBookItemInfo(id1, Enum.SpellBookSpellBank.Player)
-                if spellInfo and spellInfo.spellID then
-                    spellID = spellInfo.spellID
-                end
-            end
-            -- Fallback for older API
-            if not spellID then
-                local _, _, _, _, _, _, sid = GetSpellInfo(id1, "spell")
-                spellID = sid or id1
-            end
-            runtime.externalDragID = spellID or id1
-        else
-            runtime.externalDragID = id1
-        end
-        
-        if not wasActive and uiFrames.listParent and uiFrames.listParent:IsVisible() then
-            CustomIcons:RefreshDynamicListUI()
-        end
-    else
-        if wasActive then
-            runtime.externalDragActive = false
-            runtime.externalDragType = nil
-            runtime.externalDragID = nil
-            
-            if uiFrames.listParent and uiFrames.listParent:IsVisible() then
-                CustomIcons:RefreshDynamicListUI()
-            end
-        end
-    end
-end)
 
 local function CopyColor(color)
     if type(color) ~= "table" then return nil end
@@ -1432,6 +1389,48 @@ local function NormalizeRowGrowth(growth, rowGrowth)
     return rowGrowth
 end
 
+-- Consolidated function to set up anchor fade inheritance
+local function SetupAnchorFadeInheritance(container, settings)
+    if not settings.inheritAnchorFade or not settings.anchorFrame or settings.anchorFrame == "" then
+        return
+    end
+    
+    local anchorFrame = GetAnchorFrame(settings.anchorFrame)
+    
+    if not anchorFrame or anchorFrame == UIParent then
+        return
+    end
+    
+    -- Only hook once per container
+    if container._isHooked then
+        -- Just sync the alpha
+        container:SetAlpha(anchorFrame:GetAlpha())
+        return
+    end
+    
+    -- 1. Hook the standard WoW API for the frame
+    hooksecurefunc(anchorFrame, "SetAlpha", function(self, value)
+        if container._settings and container._settings.inheritAnchorFade then
+            container:SetAlpha(value)
+        end
+    end)
+    
+    -- 2. ElvUI Specific: Hook ElvUI's internal Fader logic
+    -- Most ElvUI unitframes use a 'fader' table for animations
+    if anchorFrame.fader and anchorFrame.fader.SetAlpha then
+        hooksecurefunc(anchorFrame.fader, "SetAlpha", function(self, value)
+            if container._settings and container._settings.inheritAnchorFade then
+                container:SetAlpha(value)
+            end
+        end)
+    end
+    
+    container._isHooked = true
+    
+    -- Initial Sync
+    container:SetAlpha(anchorFrame:GetAlpha())
+end
+
 local function GetStartAnchorForGrowthPair(growth, rowGrowth)
     local g = growth or "RIGHT"
     local rg = NormalizeRowGrowth(g, rowGrowth or GetDefaultRowGrowth(g))
@@ -1591,51 +1590,8 @@ local function EnsureGroupFrame(groupKey, settings)
     container._settings = settings
     container._groupKey = groupKey
     
-    -- Inherit Anchor Fade: Watch anchor frame's alpha and match it
-    if settings.inheritAnchorFade and settings.anchorFrame and settings.anchorFrame ~= "" then
-        local anchorFrame = GetAnchorFrame(settings.anchorFrame)
-        if anchorFrame and anchorFrame ~= UIParent then
-            -- Store last known alpha to avoid constant updates
-            container._lastAnchorAlpha = nil
-            
-            -- Use OnUpdate for efficient alpha monitoring
-            container:SetScript("OnUpdate", function(self, elapsed)
-                -- Only check if inherit is enabled
-                if not self._settings.inheritAnchorFade then
-                    if self:GetScript("OnUpdate") then
-                        self:SetScript("OnUpdate", nil)
-                    end
-                    return
-                end
-                
-                -- Get anchor frame (may have changed)
-                local anchorFrameName = self._settings.anchorFrame
-                if not anchorFrameName or anchorFrameName == "" then
-                    self:SetScript("OnUpdate", nil)
-                    return
-                end
-                
-                local targetFrame = GetAnchorFrame(anchorFrameName)
-                if not targetFrame or targetFrame == UIParent then
-                    self:SetScript("OnUpdate", nil)
-                    return
-                end
-                
-                -- Check if frame exists and get its alpha
-                local success, currentAlpha = pcall(function() return targetFrame:GetAlpha() end)
-                if not success then
-                    self:SetScript("OnUpdate", nil)
-                    return
-                end
-                
-                -- Only update if alpha changed
-                if self._lastAnchorAlpha ~= currentAlpha then
-                    self._lastAnchorAlpha = currentAlpha
-                    pcall(function() self:SetAlpha(currentAlpha) end)
-                end
-            end)
-        end
-    end
+    -- Set up anchor fade inheritance (uses event hooks, not OnUpdate)
+    SetupAnchorFadeInheritance(container, settings)
 
     -- Position the container
     if settings.position then
@@ -1673,52 +1629,8 @@ local function LayoutGroup(groupKey, iconKeys)
     local container = EnsureGroupFrame(groupKey, settings)
     container:Show()
     
-    -- Update fade inheritance when layout is refreshed
-    if settings.inheritAnchorFade and settings.anchorFrame and settings.anchorFrame ~= "" then
-        local anchorFrame = GetAnchorFrame(settings.anchorFrame)
-        if anchorFrame and anchorFrame ~= UIParent then
-            -- Enable OnUpdate if not already running
-            if not container:GetScript("OnUpdate") then
-                container._lastAnchorAlpha = nil
-                container:SetScript("OnUpdate", function(self, elapsed)
-                    if not self._settings.inheritAnchorFade then
-                        self:SetScript("OnUpdate", nil)
-                        return
-                    end
-                    
-                    local anchorFrameName = self._settings.anchorFrame
-                    if not anchorFrameName or anchorFrameName == "" then
-                        self:SetScript("OnUpdate", nil)
-                        return
-                    end
-                    
-                    local targetFrame = GetAnchorFrame(anchorFrameName)
-                    if not targetFrame or targetFrame == UIParent then
-                        self:SetScript("OnUpdate", nil)
-                        return
-                    end
-                    
-                    local success, currentAlpha = pcall(function() return targetFrame:GetAlpha() end)
-                    if not success then
-                        self:SetScript("OnUpdate", nil)
-                        return
-                    end
-                    
-                    if self._lastAnchorAlpha ~= currentAlpha then
-                        self._lastAnchorAlpha = currentAlpha
-                        pcall(function() self:SetAlpha(currentAlpha) end)
-                    end
-                end)
-            end
-        end
-    else
-        -- Disable fade inheritance
-        if container:GetScript("OnUpdate") then
-            container:SetScript("OnUpdate", nil)
-        end
-        -- Reset alpha to full visibility
-        container:SetAlpha(1)
-    end
+    -- Update anchor fade inheritance (uses event hooks, not OnUpdate)
+    SetupAnchorFadeInheritance(container, settings)
 
     local spacing = settings.spacing or 5
     local maxPerRow = settings.maxIconsPerRow
@@ -2304,7 +2216,9 @@ local function CreateIconNode(parent, iconKey, iconData, groupKey)
     -- Initially set the label
     label:SetText(displayName)
     
-    -- OnUpdate to dynamically update label and highlighting during drag
+    -- NOTE: OnUpdate for drag/drop visual feedback while icon list is visible.
+    -- Automatically cleaned up when RefreshDynamicListUI() destroys and recreates nodes.
+    -- Only updates UI when drag state actually changes (cached in _lastDragState).
     node:SetScript("OnUpdate", function(self, elapsed)
         -- Update label with (DROP) indicator when dragging externally
         if runtime.externalDragActive then
@@ -2520,7 +2434,9 @@ function CustomIcons:RefreshDynamicListUI()
         -- Initially set the title
         headerText:SetText(title)
         
-        -- OnUpdate to dynamically update title during drag
+        -- NOTE: OnUpdate for drag/drop visual feedback while icon list is visible.
+        -- Automatically cleaned up when RefreshDynamicListUI() destroys and recreates sections.
+        -- Only updates UI when drag state or hover state actually changes (cached).
         header:SetScript("OnUpdate", function(self, elapsed)
             if runtime.externalDragActive then
                 if not headerText:GetText():find(" %(DROP%)$") then
@@ -3593,6 +3509,50 @@ local function EnsureAnchorHooks()
         anchorHooked = true
     end
 end
+
+local f = uiFrames.listParent
+f:SetScript("OnUpdate", function(self, elapsed)
+    local cursorType, id1, id2 = GetCursorInfo()
+    local wasActive = runtime.externalDragActive
+    
+    if cursorType == "spell" or cursorType == "item" then
+        runtime.externalDragActive = true
+        runtime.externalDragType = cursorType
+        
+        -- For spells, GetCursorInfo returns spell index, not spell ID. Convert it.
+        if cursorType == "spell" then
+            local spellID = nil
+            if C_SpellBook and C_SpellBook.GetSpellBookItemInfo then
+                local spellInfo = C_SpellBook.GetSpellBookItemInfo(id1, Enum.SpellBookSpellBank.Player)
+                if spellInfo and spellInfo.spellID then
+                    spellID = spellInfo.spellID
+                end
+            end
+            -- Fallback for older API
+            if not spellID then
+                local _, _, _, _, _, _, sid = GetSpellInfo(id1, "spell")
+                spellID = sid or id1
+            end
+            runtime.externalDragID = spellID or id1
+        else
+            runtime.externalDragID = id1
+        end
+        
+        if not wasActive and uiFrames.listParent and uiFrames.listParent:IsVisible() then
+            CustomIcons:RefreshDynamicListUI()
+        end
+    else
+        if wasActive then
+            runtime.externalDragActive = false
+            runtime.externalDragType = nil
+            runtime.externalDragID = nil
+            
+            if uiFrames.listParent and uiFrames.listParent:IsVisible() then
+                CustomIcons:RefreshDynamicListUI()
+            end
+        end
+    end
+end)
 
 -- Hook into GUI renderer
 CustomIcons.BuildDynamicIconsUI = CustomIcons.BuildDynamicIconsUI
